@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cubo Soma 3D - Clamacalma</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { overflow: hidden; background: #1a1a2e; font-family: 'Segoe UI', sans-serif; }
+  canvas { display: block; }
+  #ui {
+    position: absolute; top: 20px; left: 20px;
+    color: #e0e0e0; pointer-events: none;
+  }
+  #ui h1 {
+    font-size: 28px; font-weight: 300; letter-spacing: 2px;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+  }
+  #ui p { font-size: 13px; opacity: 0.6; margin-top: 6px; }
+  #controls {
+    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 10px;
+  }
+  #controls button {
+    background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+    color: #e0e0e0; padding: 10px 20px; border-radius: 8px; cursor: pointer;
+    font-size: 13px; backdrop-filter: blur(10px); transition: all 0.2s;
+    pointer-events: all;
+  }
+  #controls button:hover {
+    background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.4);
+  }
+  #hint {
+    position: absolute; bottom: 70px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.5); font-size: 12px; pointer-events: none;
+    transition: opacity 0.5s;
+  }
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <h1>CUBO SOMA</h1>
+  <p>Clamacalma - Juegos artesanales en madera</p>
+</div>
+
+<div id="hint">Click y arrastra las piezas | Rueda para zoom | Click derecho para rotar</div>
+
+<div id="controls">
+  <button onclick="assembleCube()">Armar cubo</button>
+  <button onclick="scatterPieces()">Separar piezas</button>
+  <button onclick="toggleAutoRotate()">Auto-rotar</button>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── Scene ────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a2e);
+scene.fog = new THREE.Fog(0x1a1a2e, 18, 35);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
+camera.position.set(4, 5, 6);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.target.set(0, 1.2, 0);
+controls.maxPolarAngle = Math.PI / 2.1;
+controls.minDistance = 4;
+controls.maxDistance = 20;
+
+// ── Lighting ─────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x404060, 0.8));
+
+const mainLight = new THREE.DirectionalLight(0xfff5e6, 2.5);
+mainLight.position.set(5, 10, 5);
+mainLight.castShadow = true;
+mainLight.shadow.mapSize.set(2048, 2048);
+mainLight.shadow.camera.near = 1;
+mainLight.shadow.camera.far = 25;
+mainLight.shadow.camera.left = -8;
+mainLight.shadow.camera.right = 8;
+mainLight.shadow.camera.top = 8;
+mainLight.shadow.camera.bottom = -8;
+mainLight.shadow.bias = -0.001;
+scene.add(mainLight);
+
+const fillLight = new THREE.DirectionalLight(0x6688cc, 0.6);
+fillLight.position.set(-4, 6, -3);
+scene.add(fillLight);
+
+const rimLight = new THREE.DirectionalLight(0xffc880, 0.4);
+rimLight.position.set(0, 3, -8);
+scene.add(rimLight);
+
+// ── Table surface ────────────────────────────────────────────
+const table = new THREE.Mesh(
+  new THREE.CylinderGeometry(7, 7, 0.15, 64),
+  new THREE.MeshStandardMaterial({ color: 0xd4a056, roughness: 0.55 })
+);
+table.position.y = -0.075;
+table.receiveShadow = true;
+scene.add(table);
+
+// ── Soma cube pieces ─────────────────────────────────────────
+// 7 polycube pieces. Each defined by unit cube positions in local coords.
+// Solution for assembled 3x3x3 cube (from solver):
+//   Piece 1 (V): [(1,2,0),(2,1,0),(2,2,0)]
+//   Piece 2 (L): [(0,0,0),(0,1,0),(0,2,0),(0,2,1)]
+//   Piece 3 (T): [(1,0,1),(2,0,0),(2,0,1),(2,0,2)]
+//   Piece 4 (Z): [(0,2,2),(1,2,1),(1,2,2),(2,2,1)]
+//   Piece 5 (A): [(1,1,2),(2,1,1),(2,1,2),(2,2,2)]
+//   Piece 6 (B): [(0,1,1),(1,0,0),(1,1,0),(1,1,1)]
+//   Piece 7 (P): [(0,0,1),(0,0,2),(0,1,2),(1,0,2)]
+
+const CUBE_SIZE = 0.65;
+const CUBE_GAP = 0.01;
+const S = CUBE_SIZE + CUBE_GAP;
+
+// Piece definitions: local cube positions and assembled positions
+const PIECE_DEFS = [
+  { // 1 - V tricube (3 cubes, L-shape in 2D)
+    local: [[0,0,0],[1,0,0],[1,1,0]],
+    assembled: [[1,2,0],[2,1,0],[2,2,0]],
+    color: 0xf0c020, // yellow
+    name: 'Pieza V',
+  },
+  { // 2 - L tetracube
+    local: [[0,0,0],[1,0,0],[2,0,0],[2,1,0]],
+    assembled: [[0,0,0],[0,1,0],[0,2,0],[0,2,1]],
+    color: 0xe87020, // orange
+    name: 'Pieza L',
+  },
+  { // 3 - T tetracube
+    local: [[0,0,0],[1,0,0],[2,0,0],[1,1,0]],
+    assembled: [[1,0,1],[2,0,0],[2,0,1],[2,0,2]],
+    color: 0xd03030, // red
+    name: 'Pieza T',
+  },
+  { // 4 - Z tetracube
+    local: [[0,0,0],[1,0,0],[1,1,0],[2,1,0]],
+    assembled: [[0,2,2],[1,2,1],[1,2,2],[2,2,1]],
+    color: 0x901828, // dark red / bordo
+    name: 'Pieza Z',
+  },
+  { // 5 - A tetracube (right screw)
+    local: [[0,0,0],[1,0,0],[1,1,0],[1,0,1]],
+    assembled: [[1,1,2],[2,1,1],[2,1,2],[2,2,2]],
+    color: 0x80c820, // lime green
+    name: 'Pieza A',
+  },
+  { // 6 - B tetracube (left screw)
+    local: [[0,0,0],[1,0,0],[1,1,0],[0,0,1]],
+    assembled: [[0,1,1],[1,0,0],[1,1,0],[1,1,1]],
+    color: 0x20a8c8, // cyan
+    name: 'Pieza B',
+  },
+  { // 7 - P tetracube (branch/corner)
+    local: [[0,0,0],[1,0,0],[0,1,0],[0,0,1]],
+    assembled: [[0,0,1],[0,0,2],[0,1,2],[1,0,2]],
+    color: 0x3868b0, // blue
+    name: 'Pieza P',
+  },
+];
+
+const unitBox = new THREE.BoxGeometry(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE);
+const pieces = [];
+
+// Compute the rotation and offset needed to go from local to assembled positions
+function computeTransform(localCubes, assembledCubes) {
+  // We'll position the assembled group directly using assembled coords.
+  // The piece group origin is the centroid of assembled positions.
+  const cx = assembledCubes.reduce((s, c) => s + c[0], 0) / assembledCubes.length;
+  const cy = assembledCubes.reduce((s, c) => s + c[1], 0) / assembledCubes.length;
+  const cz = assembledCubes.reduce((s, c) => s + c[2], 0) / assembledCubes.length;
+  return { cx, cy, cz };
+}
+
+for (let pi = 0; pi < PIECE_DEFS.length; pi++) {
+  const def = PIECE_DEFS[pi];
+  const group = new THREE.Group();
+
+  const mat = new THREE.MeshStandardMaterial({
+    color: def.color,
+    roughness: 0.35,
+    metalness: 0.02,
+  });
+
+  // Place cubes at assembled positions, centered on the 3x3x3 cube
+  // The 3x3x3 cube goes from 0..2 in each axis, center at (1,1,1)
+  for (const [ax, ay, az] of def.assembled) {
+    const cube = new THREE.Mesh(unitBox, mat);
+    cube.position.set(
+      (ax - 1) * S,
+      (ay - 1) * S,
+      (az - 1) * S
+    );
+    cube.castShadow = true;
+    cube.receiveShadow = true;
+    group.add(cube);
+  }
+
+  // Assembled position: center of 3x3x3 cube sits at y = 1*S + CUBE_SIZE/2
+  const assembledY = S + CUBE_SIZE / 2;
+  const homePos = new THREE.Vector3(0, assembledY, 0);
+  group.position.copy(homePos);
+
+  group.userData = {
+    name: def.name,
+    index: pi,
+    homePos: homePos.clone(),
+    homeRot: new THREE.Euler(0, 0, 0),
+    assembled: def.assembled,
+    local: def.local,
+  };
+
+  scene.add(group);
+  pieces.push(group);
+}
+
+// ── Drag interaction ─────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+let draggedPiece = null;
+let dragOffset = new THREE.Vector3();
+let intersection = new THREE.Vector3();
+
+function getMousePos(e) {
+  mouse.x = (e.clientX / innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+}
+
+// Get all child meshes for raycasting
+function getAllMeshes() {
+  const meshes = [];
+  pieces.forEach(g => g.traverse(c => { if (c.isMesh) meshes.push(c); }));
+  return meshes;
+}
+
+function findPieceGroup(mesh) {
+  let obj = mesh;
+  while (obj.parent && !pieces.includes(obj)) obj = obj.parent;
+  return pieces.includes(obj) ? obj : null;
+}
+
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  getMousePos(e);
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(getAllMeshes());
+  if (hits.length > 0) {
+    const group = findPieceGroup(hits[0].object);
+    if (group) {
+      draggedPiece = group;
+      controls.enabled = false;
+      dragPlane.constant = -draggedPiece.position.y;
+      raycaster.ray.intersectPlane(dragPlane, intersection);
+      dragOffset.copy(intersection).sub(draggedPiece.position);
+      draggedPiece.position.y += 0.4;
+      document.getElementById('hint').style.opacity = '0';
+    }
+  }
+});
+
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (!draggedPiece) return;
+  getMousePos(e);
+  raycaster.setFromCamera(mouse, camera);
+  raycaster.ray.intersectPlane(dragPlane, intersection);
+  draggedPiece.position.x = intersection.x - dragOffset.x;
+  draggedPiece.position.z = intersection.z - dragOffset.z;
+});
+
+renderer.domElement.addEventListener('pointerup', () => {
+  if (draggedPiece) {
+    draggedPiece.position.y = draggedPiece.userData.homePos.y || CUBE_SIZE / 2;
+    draggedPiece = null;
+    controls.enabled = true;
+  }
+});
+
+// ── Hover effect ─────────────────────────────────────────────
+let hoveredGroup = null;
+renderer.domElement.addEventListener('mousemove', (e) => {
+  if (draggedPiece) return;
+  getMousePos(e);
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(getAllMeshes());
+
+  if (hoveredGroup && (!hits.length || findPieceGroup(hits[0].object) !== hoveredGroup)) {
+    hoveredGroup.traverse(c => {
+      if (c.isMesh) c.material.emissive.setHex(0x000000);
+    });
+    renderer.domElement.style.cursor = 'default';
+    hoveredGroup = null;
+  }
+  if (hits.length > 0 && !draggedPiece) {
+    const group = findPieceGroup(hits[0].object);
+    if (group && group !== hoveredGroup) {
+      hoveredGroup = group;
+      hoveredGroup.traverse(c => {
+        if (c.isMesh) c.material.emissive.setHex(0x181810);
+      });
+      renderer.domElement.style.cursor = 'grab';
+    }
+  }
+});
+
+// ── Animations ───────────────────────────────────────────────
+function animatePiece(group, targetPos, targetRot, delay) {
+  const startPos = group.position.clone();
+  const startRot = new THREE.Euler().copy(group.rotation);
+  const startTime = performance.now() + delay;
+  const duration = 800;
+
+  function tick() {
+    const now = performance.now();
+    if (now < startTime) { requestAnimationFrame(tick); return; }
+    let t = Math.min((now - startTime) / duration, 1);
+    t = 1 - Math.pow(1 - t, 3); // ease out cubic
+
+    group.position.lerpVectors(startPos, targetPos, t);
+    group.position.y = targetPos.y + Math.sin(t * Math.PI) * 1.2;
+
+    group.rotation.x = startRot.x + (targetRot.x - startRot.x) * t;
+    group.rotation.y = startRot.y + (targetRot.y - startRot.y) * t;
+    group.rotation.z = startRot.z + (targetRot.z - startRot.z) * t;
+
+    if (t < 1) requestAnimationFrame(tick);
+    else {
+      group.position.copy(targetPos);
+      group.rotation.copy(targetRot);
+    }
+  }
+  requestAnimationFrame(tick);
+}
+
+// Scatter positions
+const scatterData = [
+  { x: -3.0, z: -1.5, ry:  0.4, rx: Math.PI/2 },
+  { x:  3.2, z: -0.8, ry: -0.6, rx: 0 },
+  { x: -2.0, z:  2.5, ry:  1.5, rx: Math.PI/2 },
+  { x:  2.5, z:  2.0, ry: -1.0, rx: 0 },
+  { x: -0.5, z: -3.0, ry:  0.8, rx: Math.PI/2 },
+  { x:  0.8, z:  3.2, ry: -1.5, rx: 0 },
+  { x: -3.5, z:  0.5, ry:  2.2, rx: Math.PI/2 },
+];
+
+window.scatterPieces = function() {
+  pieces.forEach((p, i) => {
+    const sd = scatterData[i];
+    const target = new THREE.Vector3(sd.x, CUBE_SIZE / 2, sd.z);
+    const targetRot = new THREE.Euler(sd.rx, sd.ry, 0);
+    p.userData.homePos.copy(target);
+    p.userData.homeRot.copy(targetRot);
+    animatePiece(p, target, targetRot, i * 100);
+  });
+};
+
+window.assembleCube = function() {
+  const assembledY = S + CUBE_SIZE / 2;
+  pieces.forEach((p, i) => {
+    const target = new THREE.Vector3(0, assembledY, 0);
+    const targetRot = new THREE.Euler(0, 0, 0);
+    p.userData.homePos.copy(target);
+    p.userData.homeRot.copy(targetRot);
+    animatePiece(p, target, targetRot, i * 100);
+  });
+};
+
+let autoRotating = false;
+window.toggleAutoRotate = function() {
+  autoRotating = !autoRotating;
+  controls.autoRotate = autoRotating;
+  controls.autoRotateSpeed = 2;
+};
+
+// ── Resize ───────────────────────────────────────────────────
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ── Render loop ──────────────────────────────────────────────
+(function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+})();
+
+// Start scattered, then assemble
+pieces.forEach((p, i) => {
+  const sd = scatterData[i];
+  p.position.set(sd.x, CUBE_SIZE / 2, sd.z);
+  p.rotation.set(sd.rx, sd.ry, 0);
+  p.userData.homePos.set(sd.x, CUBE_SIZE / 2, sd.z);
+  p.userData.homeRot = new THREE.Euler(sd.rx, sd.ry, 0);
+});
+setTimeout(() => window.assembleCube(), 1200);
+
+</script>
+</body>
+</html>

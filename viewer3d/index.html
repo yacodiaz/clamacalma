@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Visor 3D - Clamacalma</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { overflow: hidden; background: #1a1a2e; font-family: 'Segoe UI', sans-serif; }
+  canvas { display: block; }
+
+  #ui {
+    position: absolute; top: 20px; left: 20px;
+    color: #e0e0e0; pointer-events: none;
+  }
+  #ui h1 {
+    font-size: 28px; font-weight: 300; letter-spacing: 2px;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+  }
+  #ui p { font-size: 13px; opacity: 0.6; margin-top: 6px; }
+
+  #drop-zone {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 400px; padding: 60px 40px;
+    border: 2px dashed rgba(255,255,255,0.3);
+    border-radius: 16px; text-align: center;
+    color: rgba(255,255,255,0.7); cursor: pointer;
+    transition: all 0.3s;
+    background: rgba(255,255,255,0.03);
+  }
+  #drop-zone:hover, #drop-zone.dragover {
+    border-color: rgba(255,255,255,0.6);
+    background: rgba(255,255,255,0.08);
+  }
+  #drop-zone h2 { font-weight: 300; font-size: 22px; margin-bottom: 12px; }
+  #drop-zone p { font-size: 13px; opacity: 0.6; line-height: 1.6; }
+  #drop-zone.hidden { display: none; }
+
+  #file-input { display: none; }
+
+  #loading {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    color: rgba(255,255,255,0.7); font-size: 16px; display: none;
+  }
+  #loading.show { display: block; }
+
+  #model-info {
+    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.5); font-size: 12px;
+    text-align: center; pointer-events: none;
+    display: none;
+  }
+  #model-info.show { display: block; }
+
+  #controls {
+    position: absolute; top: 20px; right: 20px;
+    display: flex; flex-direction: column; gap: 8px;
+    display: none;
+  }
+  #controls.show { display: flex; }
+  #controls button {
+    background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+    color: #e0e0e0; padding: 8px 16px; border-radius: 8px; cursor: pointer;
+    font-size: 12px; backdrop-filter: blur(10px); transition: all 0.2s;
+    text-align: left;
+  }
+  #controls button:hover {
+    background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.4);
+  }
+
+  #model-list {
+    position: absolute; bottom: 20px; right: 20px;
+    display: flex; flex-direction: column; gap: 6px;
+    max-height: 300px; overflow-y: auto;
+  }
+  #model-list .model-btn {
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+    color: #e0e0e0; padding: 8px 14px; border-radius: 8px; cursor: pointer;
+    font-size: 12px; transition: all 0.2s; text-align: left;
+    white-space: nowrap;
+  }
+  #model-list .model-btn:hover { background: rgba(255,255,255,0.15); }
+  #model-list .model-btn.active {
+    background: rgba(100,180,255,0.2); border-color: rgba(100,180,255,0.4);
+  }
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <h1 id="title">VISOR 3D</h1>
+  <p>Clamacalma - Juegos artesanales en madera</p>
+</div>
+
+<div id="drop-zone" onclick="document.getElementById('file-input').click()">
+  <h2>Arrastrá un archivo .glb aquí</h2>
+  <p>
+    O hacé click para seleccionar<br>
+    Soporta archivos .glb y .gltf
+  </p>
+</div>
+
+<input type="file" id="file-input" accept=".glb,.gltf" multiple>
+
+<div id="loading">Cargando modelo...</div>
+
+<div id="model-info">
+  <span id="info-text">Rueda para zoom | Click derecho para rotar | Click izquierdo para mover</span>
+</div>
+
+<div id="controls">
+  <button onclick="document.getElementById('file-input').click()">+ Cargar otro modelo</button>
+  <button onclick="toggleWireframe()">Wireframe on/off</button>
+  <button onclick="toggleAutoRotate()">Auto-rotar on/off</button>
+  <button onclick="resetCamera()">Resetear cámara</button>
+</div>
+
+<div id="model-list"></div>
+
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+// --- Scene ---
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a2e);
+
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 100);
+camera.position.set(0, 1.5, 4);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+
+// --- Lights ---
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.8);
+dirLight.position.set(5, 8, 5);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(2048, 2048);
+scene.add(dirLight);
+
+const fillLight = new THREE.DirectionalLight(0x8ecae6, 0.5);
+fillLight.position.set(-4, 3, -4);
+scene.add(fillLight);
+
+const rimLight = new THREE.DirectionalLight(0xffd6a5, 0.3);
+rimLight.position.set(0, 2, -5);
+scene.add(rimLight);
+
+// --- Floor ---
+const floorGeo = new THREE.PlaneGeometry(20, 20);
+const floorMat = new THREE.MeshStandardMaterial({ color: 0x16213e, roughness: 0.9 });
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// --- Grid helper (subtle) ---
+const grid = new THREE.GridHelper(10, 20, 0x2a2a4a, 0x2a2a4a);
+grid.position.y = 0.001;
+scene.add(grid);
+
+// --- Model management ---
+const loader = new GLTFLoader();
+const models = []; // { name, object, visible }
+let currentModel = null;
+let wireframeOn = false;
+
+function loadModel(file) {
+  const dropZone = document.getElementById('drop-zone');
+  const loading = document.getElementById('loading');
+
+  dropZone.classList.add('hidden');
+  loading.classList.add('show');
+
+  const url = URL.createObjectURL(file);
+  const name = file.name.replace(/\.(glb|gltf)$/i, '');
+
+  loader.load(url, (gltf) => {
+    const model = gltf.scene;
+
+    // Enable shadows on all meshes
+    model.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+
+    // Center and scale model
+    const box = new THREE.Box3().setFromObject(model);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const scale = 2.0 / maxDim; // Normalize to ~2 units
+
+    model.scale.setScalar(scale);
+    model.position.sub(center.multiplyScalar(scale));
+    model.position.y += (size.y * scale) / 2; // Sit on floor
+
+    scene.add(model);
+
+    // Hide previous models
+    models.forEach(m => {
+      m.object.visible = false;
+      m.visible = false;
+    });
+
+    const entry = { name, object: model, visible: true };
+    models.push(entry);
+    currentModel = entry;
+
+    // Update UI
+    loading.classList.remove('show');
+    document.getElementById('model-info').classList.add('show');
+    document.getElementById('controls').classList.add('show');
+    document.getElementById('title').textContent = name.toUpperCase();
+
+    updateModelList();
+    fitCameraToModel(model);
+
+    URL.revokeObjectURL(url);
+  },
+  (progress) => {
+    if (progress.total) {
+      const pct = Math.round((progress.loaded / progress.total) * 100);
+      loading.textContent = `Cargando modelo... ${pct}%`;
+    }
+  },
+  (error) => {
+    console.error('Error loading model:', error);
+    loading.textContent = 'Error al cargar el modelo';
+    setTimeout(() => {
+      loading.classList.remove('show');
+      dropZone.classList.remove('hidden');
+    }, 2000);
+  });
+}
+
+function fitCameraToModel(model) {
+  const box = new THREE.Box3().setFromObject(model);
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const dist = maxDim * 2.5;
+
+  camera.position.set(center.x + dist * 0.5, center.y + dist * 0.4, center.z + dist);
+  controls.target.copy(center);
+  controls.update();
+}
+
+function updateModelList() {
+  const list = document.getElementById('model-list');
+  list.innerHTML = '';
+  models.forEach((m, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'model-btn' + (m === currentModel ? ' active' : '');
+    btn.textContent = m.name;
+    btn.onclick = () => showModel(i);
+    list.appendChild(btn);
+  });
+}
+
+function showModel(index) {
+  models.forEach((m, i) => {
+    m.object.visible = (i === index);
+    m.visible = (i === index);
+  });
+  currentModel = models[index];
+  document.getElementById('title').textContent = currentModel.name.toUpperCase();
+  fitCameraToModel(currentModel.object);
+  updateModelList();
+}
+
+// --- Controls ---
+window.toggleWireframe = () => {
+  wireframeOn = !wireframeOn;
+  if (currentModel) {
+    currentModel.object.traverse((child) => {
+      if (child.isMesh && child.material) {
+        child.material.wireframe = wireframeOn;
+      }
+    });
+  }
+};
+
+window.toggleAutoRotate = () => {
+  controls.autoRotate = !controls.autoRotate;
+  controls.autoRotateSpeed = 2.0;
+};
+
+window.resetCamera = () => {
+  if (currentModel) fitCameraToModel(currentModel.object);
+};
+
+// --- Drag & drop ---
+const dropZone = document.getElementById('drop-zone');
+
+['dragenter', 'dragover'].forEach(evt => {
+  document.body.addEventListener(evt, (e) => {
+    e.preventDefault();
+    dropZone.classList.add('dragover');
+  });
+});
+
+['dragleave', 'drop'].forEach(evt => {
+  document.body.addEventListener(evt, (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+  });
+});
+
+document.body.addEventListener('drop', (e) => {
+  e.preventDefault();
+  const files = [...e.dataTransfer.files].filter(f =>
+    f.name.endsWith('.glb') || f.name.endsWith('.gltf')
+  );
+  files.forEach(f => loadModel(f));
+});
+
+// File input
+document.getElementById('file-input').addEventListener('change', (e) => {
+  [...e.target.files].forEach(f => loadModel(f));
+  e.target.value = '';
+});
+
+// Also accept drop on the whole page even after model is loaded
+document.body.addEventListener('dragover', (e) => e.preventDefault());
+document.body.addEventListener('drop', (e) => {
+  e.preventDefault();
+  const files = [...e.dataTransfer.files].filter(f =>
+    f.name.endsWith('.glb') || f.name.endsWith('.gltf')
+  );
+  files.forEach(f => loadModel(f));
+});
+
+// --- Resize ---
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// --- URL param: auto-load model ---
+const params = new URLSearchParams(window.location.search);
+const modelUrl = params.get('model');
+if (modelUrl) {
+  document.getElementById('drop-zone').classList.add('hidden');
+  document.getElementById('loading').classList.add('show');
+
+  loader.load(modelUrl, (gltf) => {
+    const model = gltf.scene;
+    model.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+
+    const box = new THREE.Box3().setFromObject(model);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const scale = 2.0 / maxDim;
+
+    model.scale.setScalar(scale);
+    model.position.sub(center.multiplyScalar(scale));
+    model.position.y += (size.y * scale) / 2;
+
+    scene.add(model);
+
+    const name = modelUrl.split('/').pop().replace(/\.(glb|gltf)$/i, '');
+    const entry = { name, object: model, visible: true };
+    models.push(entry);
+    currentModel = entry;
+
+    document.getElementById('loading').classList.remove('show');
+    document.getElementById('model-info').classList.add('show');
+    document.getElementById('controls').classList.add('show');
+    document.getElementById('title').textContent = name.toUpperCase();
+
+    updateModelList();
+    fitCameraToModel(model);
+  });
+}
+
+// --- Render loop ---
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>

@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jenga 3D - Clamacalma</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { overflow: hidden; background: #1a1a2e; font-family: 'Segoe UI', sans-serif; }
+  canvas { display: block; }
+  #ui {
+    position: absolute; top: 20px; left: 20px;
+    color: #e0e0e0; pointer-events: none;
+  }
+  #ui h1 {
+    font-size: 28px; font-weight: 300; letter-spacing: 2px;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+  }
+  #ui p { font-size: 13px; opacity: 0.6; margin-top: 6px; }
+  #controls {
+    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 10px;
+  }
+  #controls button {
+    background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+    color: #e0e0e0; padding: 10px 20px; border-radius: 8px; cursor: pointer;
+    font-size: 13px; backdrop-filter: blur(10px); transition: all 0.2s;
+    pointer-events: all;
+  }
+  #controls button:hover {
+    background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.4);
+  }
+  #hint {
+    position: absolute; bottom: 70px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.5); font-size: 12px; pointer-events: none;
+    transition: opacity 0.5s;
+  }
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <h1>JENGA</h1>
+  <p>Clamacalma - Juegos artesanales en madera</p>
+</div>
+
+<div id="hint">Click y arrastra los bloques | Rueda para zoom | Click derecho para rotar</div>
+
+<div id="controls">
+  <button onclick="buildTower()">Armar torre</button>
+  <button onclick="scatterBlocks()">Separar bloques</button>
+  <button onclick="toggleAutoRotate()">Auto-rotar</button>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── Scene ────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a2e);
+scene.fog = new THREE.Fog(0x1a1a2e, 20, 40);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
+camera.position.set(5, 7, 8);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.target.set(0, 3, 0);
+controls.maxPolarAngle = Math.PI / 2.1;
+controls.minDistance = 4;
+controls.maxDistance = 25;
+
+// ── Lighting ─────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x404060, 0.8));
+
+const mainLight = new THREE.DirectionalLight(0xfff5e6, 2.5);
+mainLight.position.set(5, 12, 5);
+mainLight.castShadow = true;
+mainLight.shadow.mapSize.set(2048, 2048);
+mainLight.shadow.camera.near = 1;
+mainLight.shadow.camera.far = 30;
+mainLight.shadow.camera.left = -10;
+mainLight.shadow.camera.right = 10;
+mainLight.shadow.camera.top = 10;
+mainLight.shadow.camera.bottom = -10;
+mainLight.shadow.bias = -0.001;
+scene.add(mainLight);
+
+const fillLight = new THREE.DirectionalLight(0x6688cc, 0.6);
+fillLight.position.set(-4, 6, -3);
+scene.add(fillLight);
+
+const rimLight = new THREE.DirectionalLight(0xffc880, 0.4);
+rimLight.position.set(0, 3, -8);
+scene.add(rimLight);
+
+// ── Table surface ────────────────────────────────────────────
+const table = new THREE.Mesh(
+  new THREE.CylinderGeometry(8, 8, 0.15, 64),
+  new THREE.MeshStandardMaterial({ color: 0xd4a056, roughness: 0.55 })
+);
+table.position.y = -0.075;
+table.receiveShadow = true;
+scene.add(table);
+
+// ── Jenga blocks ─────────────────────────────────────────────
+// Standard Jenga: 54 blocks, 18 layers of 3.
+// Block proportions: length = 3x width, height ~60% of width.
+// 3 blocks side-by-side (along width) = 1 block length.
+
+const BLOCK_W = 0.55;       // width
+const BLOCK_H = 0.35;       // height
+const BLOCK_L = 1.65;       // length (3x width)
+const GAP = 0.01;           // tiny gap between blocks
+const LAYERS = 18;
+const BLOCKS_PER_LAYER = 3;
+const TOTAL_BLOCKS = LAYERS * BLOCKS_PER_LAYER;
+
+// Natural wood color variations (from the photos: light pine to medium oak)
+const WOOD_TONES = [
+  0xd4b896, 0xc8a878, 0xdcc8a8, 0xb89870, 0xe0d0b0,
+  0xc0a880, 0xd8c098, 0xb89060, 0xe8d8b8, 0xc8b088,
+  0xd0b890, 0xbca070, 0xdcc8a0, 0xc4a880, 0xe0d0a8,
+];
+
+// Shared geometry (all blocks are the same size)
+const blockGeo = new THREE.BoxGeometry(BLOCK_L, BLOCK_H, BLOCK_W);
+
+// Add subtle bevel via edges helper? No — keep it simple with rounded edges look.
+// Actually, let's use a slightly beveled box via a custom approach...
+// For simplicity, just use RoundedBoxGeometry alternative — or just BoxGeometry is fine.
+
+const blocks = [];
+
+// Seeded random for consistent wood tones
+let seed = 42;
+function seededRandom() {
+  seed = (seed * 16807) % 2147483647;
+  return (seed - 1) / 2147483646;
+}
+
+for (let layer = 0; layer < LAYERS; layer++) {
+  const isEvenLayer = layer % 2 === 0;
+
+  for (let i = 0; i < BLOCKS_PER_LAYER; i++) {
+    const color = WOOD_TONES[Math.floor(seededRandom() * WOOD_TONES.length)];
+    // Slight hue variation per block
+    const hueShift = (seededRandom() - 0.5) * 0.08;
+    const c = new THREE.Color(color);
+    c.r = Math.min(1, c.r + hueShift);
+    c.g = Math.min(1, c.g + hueShift * 0.7);
+    c.b = Math.min(1, c.b + hueShift * 0.4);
+
+    const mat = new THREE.MeshStandardMaterial({
+      color: c,
+      roughness: 0.5 + seededRandom() * 0.15,
+      metalness: 0.0,
+    });
+
+    const mesh = new THREE.Mesh(blockGeo, mat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+
+    // Calculate assembled position
+    const y = layer * BLOCK_H + BLOCK_H / 2;
+    let x, z, rotY;
+
+    if (isEvenLayer) {
+      // Blocks along X axis, offset in Z
+      x = 0;
+      z = (i - 1) * (BLOCK_W + GAP);
+      rotY = 0;
+    } else {
+      // Blocks along Z axis, offset in X
+      x = (i - 1) * (BLOCK_W + GAP);
+      z = 0;
+      rotY = Math.PI / 2;
+    }
+
+    const homePos = new THREE.Vector3(x, y, z);
+    mesh.position.copy(homePos);
+    mesh.rotation.y = rotY;
+
+    mesh.userData = {
+      name: `Bloque ${layer * 3 + i + 1}`,
+      layer,
+      index: i,
+      homePos: homePos.clone(),
+      homeRot: rotY,
+    };
+
+    scene.add(mesh);
+    blocks.push(mesh);
+  }
+}
+
+// ── Drag interaction ─────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+let draggedBlock = null;
+let dragOffset = new THREE.Vector3();
+let intersection = new THREE.Vector3();
+let dragStartY = 0;
+
+function getMousePos(e) {
+  mouse.x = (e.clientX / innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+}
+
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  getMousePos(e);
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(blocks);
+  if (hits.length > 0) {
+    draggedBlock = hits[0].object;
+    dragStartY = draggedBlock.position.y;
+    controls.enabled = false;
+    dragPlane.constant = -dragStartY;
+    raycaster.ray.intersectPlane(dragPlane, intersection);
+    dragOffset.copy(intersection).sub(draggedBlock.position);
+    draggedBlock.position.y = dragStartY + 0.3;
+    document.getElementById('hint').style.opacity = '0';
+  }
+});
+
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (!draggedBlock) return;
+  getMousePos(e);
+  raycaster.setFromCamera(mouse, camera);
+  raycaster.ray.intersectPlane(dragPlane, intersection);
+  draggedBlock.position.x = intersection.x - dragOffset.x;
+  draggedBlock.position.z = intersection.z - dragOffset.z;
+});
+
+renderer.domElement.addEventListener('pointerup', () => {
+  if (draggedBlock) {
+    // Drop block to table level if pulled far from tower
+    const dist = new THREE.Vector2(draggedBlock.position.x, draggedBlock.position.z).length();
+    if (dist > 2) {
+      draggedBlock.position.y = BLOCK_H / 2;
+    } else {
+      draggedBlock.position.y = dragStartY;
+    }
+    draggedBlock = null;
+    controls.enabled = true;
+  }
+});
+
+// ── Hover ────────────────────────────────────────────────────
+let hoveredBlock = null;
+renderer.domElement.addEventListener('mousemove', (e) => {
+  if (draggedBlock) return;
+  getMousePos(e);
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(blocks);
+  if (hoveredBlock && (!hits.length || hits[0].object !== hoveredBlock)) {
+    hoveredBlock.material.emissive.setHex(0x000000);
+    renderer.domElement.style.cursor = 'default';
+    hoveredBlock = null;
+  }
+  if (hits.length > 0 && !draggedBlock) {
+    hoveredBlock = hits[0].object;
+    hoveredBlock.material.emissive.setHex(0x181808);
+    renderer.domElement.style.cursor = 'grab';
+  }
+});
+
+// ── Animations ───────────────────────────────────────────────
+function animateBlock(mesh, targetPos, targetRotY, delay) {
+  const startPos = mesh.position.clone();
+  const startRot = mesh.rotation.y;
+  const startTime = performance.now() + delay;
+  const duration = 600;
+
+  function tick() {
+    const now = performance.now();
+    if (now < startTime) { requestAnimationFrame(tick); return; }
+    let t = Math.min((now - startTime) / duration, 1);
+    t = 1 - Math.pow(1 - t, 3);
+
+    mesh.position.lerpVectors(startPos, targetPos, t);
+    mesh.position.y = targetPos.y + Math.sin(t * Math.PI) * 1.5;
+    mesh.rotation.y = startRot + (targetRotY - startRot) * t;
+
+    if (t < 1) requestAnimationFrame(tick);
+    else mesh.position.copy(targetPos);
+  }
+  requestAnimationFrame(tick);
+}
+
+window.buildTower = function() {
+  blocks.forEach((b, i) => {
+    const home = b.userData.homePos;
+    // Stagger delay: bottom blocks first, like building a real tower
+    const layerDelay = b.userData.layer * 120 + b.userData.index * 40;
+    animateBlock(b, home, b.userData.homeRot, layerDelay);
+  });
+};
+
+window.scatterBlocks = function() {
+  blocks.forEach((b, i) => {
+    const angle = seededRandom() * Math.PI * 2;
+    const radius = 2 + seededRandom() * 4;
+    const target = new THREE.Vector3(
+      Math.cos(angle + i * 0.3) * radius,
+      BLOCK_H / 2,
+      Math.sin(angle + i * 0.3) * radius
+    );
+    const rot = seededRandom() * Math.PI;
+    animateBlock(b, target, rot, i * 15);
+  });
+  // Reset seed so scatter is different each time
+  seed = Math.floor(Math.random() * 10000) + 1;
+};
+
+let autoRotating = false;
+window.toggleAutoRotate = function() {
+  autoRotating = !autoRotating;
+  controls.autoRotate = autoRotating;
+  controls.autoRotateSpeed = 2;
+};
+
+// ── Resize ───────────────────────────────────────────────────
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ── Render loop ──────────────────────────────────────────────
+(function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+})();
+
+// Start with tower already built
+// (no animation on load — tower appears built, user can scatter)
+
+</script>
+</body>
+</html>

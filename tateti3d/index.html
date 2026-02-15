@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ta-Te-Ti 3D - Clamacalma</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { overflow: hidden; background: #1a1a2e; font-family: 'Segoe UI', sans-serif; }
+  canvas { display: block; }
+  #ui {
+    position: absolute; top: 20px; left: 20px;
+    color: #e0e0e0; pointer-events: none;
+  }
+  #ui h1 {
+    font-size: 28px; font-weight: 300; letter-spacing: 2px;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+  }
+  #ui p { font-size: 13px; opacity: 0.6; margin-top: 6px; }
+  #turn {
+    position: absolute; top: 20px; right: 20px;
+    color: #e0e0e0; font-size: 16px; pointer-events: none;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+  }
+  #turn span { font-weight: bold; }
+  #message {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    color: #fff; font-size: 36px; font-weight: 300; letter-spacing: 3px;
+    text-shadow: 0 4px 20px rgba(0,0,0,0.7);
+    pointer-events: none; opacity: 0; transition: opacity 0.5s;
+  }
+  #controls {
+    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 10px;
+  }
+  #controls button {
+    background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+    color: #e0e0e0; padding: 10px 20px; border-radius: 8px; cursor: pointer;
+    font-size: 13px; backdrop-filter: blur(10px); transition: all 0.2s;
+    pointer-events: all;
+  }
+  #controls button:hover {
+    background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.4);
+  }
+  #hint {
+    position: absolute; bottom: 70px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.5); font-size: 12px; pointer-events: none;
+    transition: opacity 0.5s;
+  }
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <h1>TA-TE-TI</h1>
+  <p>Clamacalma - Juegos artesanales en madera</p>
+</div>
+
+<div id="turn">Turno: <span id="turnLabel">✕</span></div>
+<div id="message"></div>
+
+<div id="hint">Click en una casilla para jugar | Rueda para zoom | Click derecho para rotar</div>
+
+<div id="controls">
+  <button onclick="resetGame()">Nueva partida</button>
+  <button onclick="toggleAutoRotate()">Auto-rotar</button>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── Scene ────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a2e);
+scene.fog = new THREE.Fog(0x1a1a2e, 18, 35);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
+camera.position.set(0, 6, 5);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.target.set(0, 0.3, 0);
+controls.maxPolarAngle = Math.PI / 2.1;
+controls.minDistance = 4;
+controls.maxDistance = 20;
+
+// ── Lighting ─────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x404060, 0.8));
+
+const mainLight = new THREE.DirectionalLight(0xfff5e6, 2.5);
+mainLight.position.set(5, 10, 5);
+mainLight.castShadow = true;
+mainLight.shadow.mapSize.set(2048, 2048);
+mainLight.shadow.camera.near = 1;
+mainLight.shadow.camera.far = 25;
+mainLight.shadow.camera.left = -8;
+mainLight.shadow.camera.right = 8;
+mainLight.shadow.camera.top = 8;
+mainLight.shadow.camera.bottom = -8;
+mainLight.shadow.bias = -0.001;
+scene.add(mainLight);
+
+const fillLight = new THREE.DirectionalLight(0x6688cc, 0.6);
+fillLight.position.set(-4, 6, -3);
+scene.add(fillLight);
+
+const rimLight = new THREE.DirectionalLight(0xffc880, 0.4);
+rimLight.position.set(0, 3, -8);
+scene.add(rimLight);
+
+// ── Table surface ────────────────────────────────────────────
+const table = new THREE.Mesh(
+  new THREE.CylinderGeometry(7, 7, 0.15, 64),
+  new THREE.MeshStandardMaterial({ color: 0xd4a056, roughness: 0.55 })
+);
+table.position.y = -0.075;
+table.receiveShadow = true;
+scene.add(table);
+
+// ── Board ────────────────────────────────────────────────────
+const CELL = 1.1;       // cell size
+const BOARD_SIZE = CELL * 3 + 0.4;  // total board
+const BOARD_H = 0.12;
+const GROOVE_DEPTH = 0.04;
+const LINE_W = 0.08;
+
+// Main board base
+const boardMat = new THREE.MeshStandardMaterial({ color: 0xc8a878, roughness: 0.5 });
+const board = new THREE.Mesh(
+  new THREE.BoxGeometry(BOARD_SIZE, BOARD_H, BOARD_SIZE),
+  boardMat
+);
+board.position.y = BOARD_H / 2;
+board.castShadow = true;
+board.receiveShadow = true;
+scene.add(board);
+
+// Groove lines (darker inset lines on the board)
+const grooveMat = new THREE.MeshStandardMaterial({ color: 0x8a6a48, roughness: 0.6 });
+
+function addGroove(x, z, sx, sz) {
+  const groove = new THREE.Mesh(
+    new THREE.BoxGeometry(sx, GROOVE_DEPTH, sz),
+    grooveMat
+  );
+  groove.position.set(x, BOARD_H - GROOVE_DEPTH / 2 + 0.001, z);
+  groove.receiveShadow = true;
+  scene.add(groove);
+}
+
+// Two vertical lines and two horizontal lines
+const lineLen = CELL * 3 + 0.1;
+addGroove(-CELL / 2, 0, LINE_W, lineLen);
+addGroove(CELL / 2, 0, LINE_W, lineLen);
+addGroove(0, -CELL / 2, lineLen, LINE_W);
+addGroove(0, CELL / 2, lineLen, LINE_W);
+
+// ── Invisible click targets per cell ─────────────────────────
+const cellTargets = [];
+const targetGeo = new THREE.BoxGeometry(CELL * 0.9, 0.01, CELL * 0.9);
+const targetMat = new THREE.MeshBasicMaterial({ visible: false });
+
+for (let row = 0; row < 3; row++) {
+  for (let col = 0; col < 3; col++) {
+    const mesh = new THREE.Mesh(targetGeo, targetMat);
+    const x = (col - 1) * CELL;
+    const z = (row - 1) * CELL;
+    mesh.position.set(x, BOARD_H + 0.01, z);
+    mesh.userData = { row, col };
+    scene.add(mesh);
+    cellTargets.push(mesh);
+  }
+}
+
+// ── Game pieces (X and O) ────────────────────────────────────
+// X piece: two crossed bars
+// O piece: torus
+
+const PIECE_H = 0.18;
+const PIECE_R = 0.32;
+
+const xMat = new THREE.MeshStandardMaterial({ color: 0xc83030, roughness: 0.35, metalness: 0.02 });
+const oMat = new THREE.MeshStandardMaterial({ color: 0x3070c0, roughness: 0.35, metalness: 0.02 });
+
+function createXPiece() {
+  const group = new THREE.Group();
+  const barGeo = new THREE.BoxGeometry(PIECE_R * 2, PIECE_H, PIECE_R * 0.35);
+
+  const bar1 = new THREE.Mesh(barGeo, xMat);
+  bar1.rotation.y = Math.PI / 4;
+  bar1.castShadow = true;
+  bar1.receiveShadow = true;
+  group.add(bar1);
+
+  const bar2 = new THREE.Mesh(barGeo, xMat);
+  bar2.rotation.y = -Math.PI / 4;
+  bar2.castShadow = true;
+  bar2.receiveShadow = true;
+  group.add(bar2);
+
+  return group;
+}
+
+function createOPiece() {
+  const group = new THREE.Group();
+  const torus = new THREE.Mesh(
+    new THREE.TorusGeometry(PIECE_R * 0.7, PIECE_R * 0.2, 16, 32),
+    oMat
+  );
+  torus.rotation.x = Math.PI / 2;
+  torus.castShadow = true;
+  torus.receiveShadow = true;
+  group.add(torus);
+  return group;
+}
+
+// ── Game state ───────────────────────────────────────────────
+// 0 = empty, 1 = X, 2 = O
+let boardState = [0,0,0, 0,0,0, 0,0,0];
+let currentPlayer = 1; // 1=X, 2=O
+let gameOver = false;
+const placedPieces = [];
+
+const WIN_LINES = [
+  [0,1,2],[3,4,5],[6,7,8], // rows
+  [0,3,6],[1,4,7],[2,5,8], // cols
+  [0,4,8],[2,4,6],         // diags
+];
+
+function checkWin(player) {
+  return WIN_LINES.find(line => line.every(i => boardState[i] === player)) || null;
+}
+
+function checkDraw() {
+  return boardState.every(c => c !== 0);
+}
+
+function showMessage(text) {
+  const el = document.getElementById('message');
+  el.textContent = text;
+  el.style.opacity = '1';
+  setTimeout(() => el.style.opacity = '0', 3000);
+}
+
+function updateTurnLabel() {
+  document.getElementById('turnLabel').textContent = currentPlayer === 1 ? '✕' : '○';
+  document.getElementById('turnLabel').style.color = currentPlayer === 1 ? '#e85050' : '#5090e8';
+}
+
+// Drop animation
+function dropPiece(piece, targetY, delay) {
+  const startY = targetY + 3;
+  piece.position.y = startY;
+  piece.scale.set(0.01, 0.01, 0.01);
+  const startTime = performance.now() + delay;
+  const duration = 500;
+
+  function tick() {
+    const now = performance.now();
+    if (now < startTime) { requestAnimationFrame(tick); return; }
+    let t = Math.min((now - startTime) / duration, 1);
+    // Bounce easing
+    const ease = t < 0.6
+      ? (t / 0.6) * (t / 0.6)
+      : 1 - Math.pow((t - 0.6) / 0.4 - 1, 2) * 0.15;
+
+    piece.position.y = startY + (targetY - startY) * Math.min(t * 1.5, 1);
+    const s = Math.min(t * 2, 1);
+    piece.scale.set(s, s, s);
+
+    if (t < 1) requestAnimationFrame(tick);
+    else {
+      piece.position.y = targetY;
+      piece.scale.set(1, 1, 1);
+    }
+  }
+  requestAnimationFrame(tick);
+}
+
+// Win line highlight
+let winHighlight = null;
+function showWinLine(line) {
+  const positions = line.map(i => {
+    const row = Math.floor(i / 3);
+    const col = i % 3;
+    return new THREE.Vector3((col - 1) * CELL, BOARD_H + PIECE_H + 0.05, (row - 1) * CELL);
+  });
+
+  const geo = new THREE.BufferGeometry().setFromPoints([positions[0], positions[2]]);
+  const mat = new THREE.LineBasicMaterial({ color: 0xffdd44, linewidth: 2 });
+  winHighlight = new THREE.Line(geo, mat);
+  scene.add(winHighlight);
+}
+
+// ── Click handler ────────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || gameOver) return;
+
+  mouse.x = (e.clientX / innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+
+  const hits = raycaster.intersectObjects(cellTargets);
+  if (hits.length === 0) return;
+
+  const { row, col } = hits[0].object.userData;
+  const idx = row * 3 + col;
+
+  if (boardState[idx] !== 0) return;
+
+  // Place piece
+  boardState[idx] = currentPlayer;
+  const piece = currentPlayer === 1 ? createXPiece() : createOPiece();
+  const x = (col - 1) * CELL;
+  const z = (row - 1) * CELL;
+  piece.position.set(x, BOARD_H + PIECE_H / 2, z);
+  scene.add(piece);
+  placedPieces.push(piece);
+
+  dropPiece(piece, BOARD_H + PIECE_H / 2, 0);
+
+  document.getElementById('hint').style.opacity = '0';
+
+  // Check result
+  const winLine = checkWin(currentPlayer);
+  if (winLine) {
+    gameOver = true;
+    showMessage(currentPlayer === 1 ? '¡Gana ✕!' : '¡Gana ○!');
+    showWinLine(winLine);
+    document.getElementById('turn').style.opacity = '0.3';
+    return;
+  }
+
+  if (checkDraw()) {
+    gameOver = true;
+    showMessage('¡Empate!');
+    document.getElementById('turn').style.opacity = '0.3';
+    return;
+  }
+
+  currentPlayer = currentPlayer === 1 ? 2 : 1;
+  updateTurnLabel();
+});
+
+// ── Hover on cells ───────────────────────────────────────────
+let hoveredCell = null;
+// Preview ghost piece
+let ghostPiece = null;
+const ghostXMat = new THREE.MeshStandardMaterial({ color: 0xc83030, roughness: 0.35, transparent: true, opacity: 0.3 });
+const ghostOMat = new THREE.MeshStandardMaterial({ color: 0x3070c0, roughness: 0.35, transparent: true, opacity: 0.3 });
+
+function createGhostX() {
+  const group = new THREE.Group();
+  const barGeo = new THREE.BoxGeometry(PIECE_R * 2, PIECE_H, PIECE_R * 0.35);
+  const bar1 = new THREE.Mesh(barGeo, ghostXMat);
+  bar1.rotation.y = Math.PI / 4;
+  group.add(bar1);
+  const bar2 = new THREE.Mesh(barGeo, ghostXMat);
+  bar2.rotation.y = -Math.PI / 4;
+  group.add(bar2);
+  return group;
+}
+
+function createGhostO() {
+  const group = new THREE.Group();
+  const torus = new THREE.Mesh(
+    new THREE.TorusGeometry(PIECE_R * 0.7, PIECE_R * 0.2, 16, 32),
+    ghostOMat
+  );
+  torus.rotation.x = Math.PI / 2;
+  group.add(torus);
+  return group;
+}
+
+renderer.domElement.addEventListener('mousemove', (e) => {
+  if (gameOver) {
+    renderer.domElement.style.cursor = 'default';
+    return;
+  }
+
+  mouse.x = (e.clientX / innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+
+  const hits = raycaster.intersectObjects(cellTargets);
+
+  // Remove old ghost
+  if (ghostPiece) {
+    scene.remove(ghostPiece);
+    ghostPiece = null;
+  }
+
+  if (hits.length > 0) {
+    const { row, col } = hits[0].object.userData;
+    const idx = row * 3 + col;
+    if (boardState[idx] === 0) {
+      renderer.domElement.style.cursor = 'pointer';
+      // Show ghost preview
+      ghostPiece = currentPlayer === 1 ? createGhostX() : createGhostO();
+      const x = (col - 1) * CELL;
+      const z = (row - 1) * CELL;
+      ghostPiece.position.set(x, BOARD_H + PIECE_H / 2, z);
+      scene.add(ghostPiece);
+    } else {
+      renderer.domElement.style.cursor = 'default';
+    }
+  } else {
+    renderer.domElement.style.cursor = 'default';
+  }
+});
+
+// ── Reset ────────────────────────────────────────────────────
+window.resetGame = function() {
+  boardState = [0,0,0, 0,0,0, 0,0,0];
+  currentPlayer = 1;
+  gameOver = false;
+
+  // Remove placed pieces with upward animation
+  placedPieces.forEach((p, i) => {
+    const startPos = p.position.clone();
+    const startTime = performance.now() + i * 50;
+    const duration = 400;
+    function tick() {
+      const now = performance.now();
+      if (now < startTime) { requestAnimationFrame(tick); return; }
+      let t = Math.min((now - startTime) / duration, 1);
+      t = t * t; // ease in
+      p.position.y = startPos.y + t * 4;
+      p.scale.setScalar(1 - t);
+      if (t < 1) requestAnimationFrame(tick);
+      else scene.remove(p);
+    }
+    requestAnimationFrame(tick);
+  });
+  placedPieces.length = 0;
+
+  if (winHighlight) {
+    scene.remove(winHighlight);
+    winHighlight = null;
+  }
+
+  if (ghostPiece) {
+    scene.remove(ghostPiece);
+    ghostPiece = null;
+  }
+
+  updateTurnLabel();
+  document.getElementById('turn').style.opacity = '1';
+  document.getElementById('hint').style.opacity = '1';
+};
+
+let autoRotating = false;
+window.toggleAutoRotate = function() {
+  autoRotating = !autoRotating;
+  controls.autoRotate = autoRotating;
+  controls.autoRotateSpeed = 2;
+};
+
+// ── Resize ───────────────────────────────────────────────────
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ── Render loop ──────────────────────────────────────────────
+(function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+})();
+
+updateTurnLabel();
+
+</script>
+</body>
+</html>

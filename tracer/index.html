@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trazador de Piezas - Clamacalma</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    display: flex;
+    height: 100vh;
+  }
+
+  /* ── Left panel: canvas ────────────────────── */
+  #canvas-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+  }
+  #toolbar {
+    display: flex; gap: 8px; padding: 10px;
+    background: rgba(0,0,0,0.3);
+    align-items: center; flex-wrap: wrap;
+  }
+  #toolbar button, #toolbar label, #toolbar select {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: #e0e0e0; padding: 6px 14px; border-radius: 6px;
+    cursor: pointer; font-size: 12px;
+  }
+  #toolbar button:hover, #toolbar label:hover {
+    background: rgba(255,255,255,0.2);
+  }
+  #toolbar button.active {
+    background: rgba(80,150,255,0.3);
+    border-color: rgba(80,150,255,0.6);
+  }
+  #toolbar select {
+    padding: 6px 8px;
+  }
+  #toolbar .sep {
+    width: 1px; height: 24px;
+    background: rgba(255,255,255,0.15);
+  }
+  #toolbar .info {
+    font-size: 11px; opacity: 0.6; margin-left: auto;
+  }
+
+  /* ── Photo strip (thumbnails) ──────────────── */
+  #photo-strip {
+    display: flex; gap: 4px; padding: 6px 10px;
+    background: rgba(0,0,0,0.2);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    overflow-x: auto;
+    align-items: center;
+    min-height: 52px;
+  }
+  #photo-strip:empty::after {
+    content: 'Sin fotos cargadas';
+    opacity: 0.3; font-size: 11px;
+  }
+  .photo-thumb {
+    width: 50px; height: 40px; object-fit: cover;
+    border-radius: 4px; cursor: pointer;
+    border: 2px solid transparent;
+    opacity: 0.6; transition: all 0.15s;
+    flex-shrink: 0;
+  }
+  .photo-thumb:hover { opacity: 0.9; }
+  .photo-thumb.active {
+    border-color: rgba(80,150,255,0.8);
+    opacity: 1;
+  }
+  .photo-thumb-add {
+    width: 50px; height: 40px;
+    border: 1px dashed rgba(255,255,255,0.25);
+    border-radius: 4px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; opacity: 0.4; flex-shrink: 0;
+    transition: all 0.15s;
+  }
+  .photo-thumb-add:hover { opacity: 0.7; border-color: rgba(80,150,255,0.5); }
+  .photo-remove {
+    position: absolute; top: -4px; right: -4px;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: rgba(255,60,60,0.8); color: #fff;
+    font-size: 10px; line-height: 16px; text-align: center;
+    cursor: pointer; display: none;
+  }
+  .photo-wrap { position: relative; flex-shrink: 0; }
+  .photo-wrap:hover .photo-remove { display: block; }
+
+  #canvas-wrap {
+    flex: 1;
+    position: relative;
+    overflow: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #canvas-container {
+    position: relative;
+    display: inline-block;
+  }
+  #bg-image {
+    display: block;
+    max-width: 100%;
+    max-height: calc(100vh - 110px);
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+  #draw-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    cursor: crosshair;
+  }
+
+  /* Opacity slider for image */
+  #opacity-control {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; opacity: 0.7;
+  }
+  #opacity-control input {
+    width: 60px; accent-color: #5090e8;
+  }
+
+  /* ── Right panel: pieces & output ──────────── */
+  #side-panel {
+    width: 340px;
+    background: rgba(0,0,0,0.4);
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid rgba(255,255,255,0.1);
+  }
+  #side-panel h2 {
+    font-size: 16px; font-weight: 400;
+    padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+  #pieces-list {
+    flex: 1; overflow-y: auto; padding: 8px;
+  }
+  .piece-item {
+    padding: 8px 10px; margin-bottom: 4px;
+    border-radius: 6px; cursor: pointer;
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px;
+    border: 1px solid transparent;
+  }
+  .piece-item:hover { background: rgba(255,255,255,0.05); }
+  .piece-item.selected {
+    background: rgba(80,150,255,0.15);
+    border-color: rgba(80,150,255,0.4);
+  }
+  .piece-color {
+    width: 16px; height: 16px; border-radius: 3px;
+    border: 1px solid rgba(255,255,255,0.3);
+    flex-shrink: 0;
+  }
+  .piece-name { flex: 1; }
+  .piece-pts { font-size: 11px; opacity: 0.5; }
+  .piece-del {
+    opacity: 0.4; cursor: pointer; font-size: 16px;
+  }
+  .piece-del:hover { opacity: 1; color: #f55; }
+
+  #add-piece-btn {
+    margin: 8px; padding: 8px;
+    background: rgba(80,200,120,0.15);
+    border: 1px dashed rgba(80,200,120,0.4);
+    border-radius: 6px; cursor: pointer;
+    text-align: center; font-size: 13px; color: #80c878;
+  }
+  #add-piece-btn:hover {
+    background: rgba(80,200,120,0.25);
+  }
+
+  /* Output area */
+  #output-area {
+    border-top: 1px solid rgba(255,255,255,0.1);
+    padding: 10px;
+  }
+  #output-area h3 {
+    font-size: 13px; font-weight: 400; margin-bottom: 6px;
+  }
+  #output-area textarea {
+    width: 100%; height: 120px;
+    background: rgba(0,0,0,0.4);
+    color: #a0d0a0; border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px; padding: 8px; font-size: 11px;
+    font-family: 'Consolas', monospace; resize: vertical;
+  }
+  #output-area .btns {
+    display: flex; gap: 6px; margin-top: 6px;
+  }
+  #output-area button {
+    flex: 1; padding: 6px;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: #e0e0e0; border-radius: 6px;
+    cursor: pointer; font-size: 12px;
+  }
+  #output-area button:hover {
+    background: rgba(255,255,255,0.2);
+  }
+
+  /* Drop zone */
+  #drop-zone {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px dashed rgba(255,255,255,0.2);
+    border-radius: 12px;
+    margin: 20px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  #drop-zone:hover, #drop-zone.over {
+    border-color: rgba(80,150,255,0.5);
+    background: rgba(80,150,255,0.05);
+  }
+  #drop-zone p {
+    text-align: center;
+    opacity: 0.5;
+    font-size: 14px;
+    line-height: 1.8;
+  }
+</style>
+</head>
+<body>
+
+<div id="canvas-panel">
+  <div id="toolbar">
+    <label id="load-btn">
+      + Fotos
+      <input type="file" accept="image/*" id="file-input" style="display:none" multiple>
+    </label>
+    <div class="sep"></div>
+    <button id="mode-line" class="active" title="Trazar con líneas rectas">Lineal</button>
+    <button id="mode-curve" title="Trazar con curvas suaves">Curva</button>
+    <div class="sep"></div>
+    <button id="btn-undo" title="Deshacer último punto (Ctrl+Z)">Deshacer</button>
+    <button id="btn-close" title="Cerrar la pieza actual (Enter)">Cerrar pieza</button>
+    <button id="btn-hole" title="Marcar siguiente trazo como agujero (H)">+ Agujero</button>
+    <div class="sep"></div>
+    <div id="opacity-control">
+      Foto:
+      <input type="range" id="img-opacity" min="10" max="100" value="100">
+    </div>
+    <div class="sep"></div>
+    <span class="info" id="coords-info">-</span>
+  </div>
+
+  <div id="photo-strip"></div>
+
+  <div id="canvas-wrap">
+    <!-- Before image loaded -->
+    <div id="drop-zone">
+      <p>Arrastrá fotos acá<br>o hacé click en "+ Fotos"<br><br><small>Podés cargar varias fotos del mismo juguete<br>para usar como referencia</small></p>
+    </div>
+    <!-- After image loaded -->
+    <div id="canvas-container" style="display:none">
+      <img id="bg-image">
+      <canvas id="draw-canvas"></canvas>
+    </div>
+  </div>
+</div>
+
+<div id="side-panel">
+  <h2>Piezas trazadas</h2>
+  <div id="pieces-list"></div>
+  <div id="add-piece-btn" onclick="addNewPiece()">+ Nueva pieza</div>
+  <div id="output-area">
+    <h3>Coordenadas (Three.js)</h3>
+    <textarea id="output" readonly placeholder="Las coordenadas aparecerán acá..."></textarea>
+    <div class="btns">
+      <button onclick="generateOutput()">Generar código</button>
+      <button onclick="copyOutput()">Copiar</button>
+      <button onclick="exportJSON()">Exportar JSON</button>
+    </div>
+    <div class="btns" style="margin-top:4px">
+      <button onclick="importJSON()">Importar JSON</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────
+const PIECE_COLORS = [
+  '#e04040','#e08030','#e0c040','#60c060','#40a0d0',
+  '#4060c0','#8040b0','#c06080','#80c0c0','#c0a060',
+  '#d07070','#70b070','#7090d0','#b070b0',
+];
+
+let pieces = [];
+let selectedIdx = 0;
+let mode = 'line';
+let imgW = 0, imgH = 0;
+let drawingHole = false;
+
+// Multi-photo support
+let photos = [];       // [{url, name, w, h}]
+let activePhotoIdx = -1;
+
+const bgImg = document.getElementById('bg-image');
+const drawCanvas = document.getElementById('draw-canvas');
+const ctx = drawCanvas.getContext('2d');
+const photoStrip = document.getElementById('photo-strip');
+
+// ── Multi-photo management ────────────────────────────────────
+function addPhotos(files) {
+  for (const file of files) {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      photos.push({ url, name: file.name, w: img.naturalWidth, h: img.naturalHeight });
+      renderPhotoStrip();
+      // Auto-select first photo
+      if (photos.length === 1) selectPhoto(0);
+    };
+    img.src = url;
+  }
+}
+
+function selectPhoto(idx) {
+  if (idx < 0 || idx >= photos.length) return;
+  activePhotoIdx = idx;
+  const photo = photos[idx];
+  bgImg.onload = () => {
+    imgW = photo.w;
+    imgH = photo.h;
+    drawCanvas.width = imgW;
+    drawCanvas.height = imgH;
+    document.getElementById('drop-zone').style.display = 'none';
+    document.getElementById('canvas-container').style.display = 'block';
+    if (pieces.length === 0) addNewPiece();
+    redraw();
+  };
+  bgImg.src = photo.url;
+  renderPhotoStrip();
+}
+
+function removePhoto(idx) {
+  URL.revokeObjectURL(photos[idx].url);
+  photos.splice(idx, 1);
+  if (activePhotoIdx >= photos.length) {
+    activePhotoIdx = photos.length - 1;
+  }
+  if (photos.length === 0) {
+    activePhotoIdx = -1;
+    document.getElementById('drop-zone').style.display = 'flex';
+    document.getElementById('canvas-container').style.display = 'none';
+  } else {
+    selectPhoto(activePhotoIdx);
+  }
+  renderPhotoStrip();
+}
+
+function renderPhotoStrip() {
+  photoStrip.innerHTML = '';
+  photos.forEach((photo, i) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'photo-wrap';
+
+    const thumb = document.createElement('img');
+    thumb.className = 'photo-thumb' + (i === activePhotoIdx ? ' active' : '');
+    thumb.src = photo.url;
+    thumb.title = photo.name + ' (' + photo.w + '×' + photo.h + ')';
+    thumb.addEventListener('click', () => selectPhoto(i));
+
+    const del = document.createElement('div');
+    del.className = 'photo-remove';
+    del.textContent = '×';
+    del.title = 'Quitar foto';
+    del.addEventListener('click', (e) => { e.stopPropagation(); removePhoto(i); });
+
+    wrap.appendChild(thumb);
+    wrap.appendChild(del);
+    photoStrip.appendChild(wrap);
+  });
+
+  // Add button at end
+  const addBtn = document.createElement('div');
+  addBtn.className = 'photo-thumb-add';
+  addBtn.textContent = '+';
+  addBtn.title = 'Agregar más fotos';
+  addBtn.addEventListener('click', () => document.getElementById('file-input').click());
+  photoStrip.appendChild(addBtn);
+}
+
+// ── File input & drop ─────────────────────────────────────────
+document.getElementById('file-input').addEventListener('change', (e) => {
+  if (e.target.files.length) addPhotos(e.target.files);
+  e.target.value = ''; // reset so same file can be re-selected
+});
+
+const dropZone = document.getElementById('drop-zone');
+dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault(); dropZone.classList.remove('over');
+  if (e.dataTransfer.files.length) addPhotos(e.dataTransfer.files);
+});
+
+// Also allow dropping on the canvas area
+document.getElementById('canvas-wrap').addEventListener('dragover', (e) => e.preventDefault());
+document.getElementById('canvas-wrap').addEventListener('drop', (e) => {
+  e.preventDefault();
+  if (e.dataTransfer.files.length) addPhotos(e.dataTransfer.files);
+});
+
+// Opacity control
+document.getElementById('img-opacity').addEventListener('input', (e) => {
+  bgImg.style.opacity = e.target.value / 100;
+});
+
+// ── Piece management ──────────────────────────────────────────
+function addNewPiece() {
+  const idx = pieces.length;
+  pieces.push({
+    name: `Pieza ${idx + 1}`,
+    color: PIECE_COLORS[idx % PIECE_COLORS.length],
+    points: [],
+    holes: [],
+    closed: false,
+  });
+  selectedIdx = idx;
+  drawingHole = false;
+  renderPiecesList();
+  redraw();
+}
+
+function selectPiece(idx) {
+  selectedIdx = idx;
+  drawingHole = false;
+  renderPiecesList();
+  redraw();
+}
+
+function deletePiece(idx) {
+  pieces.splice(idx, 1);
+  if (selectedIdx >= pieces.length) selectedIdx = Math.max(0, pieces.length - 1);
+  renderPiecesList();
+  redraw();
+}
+
+function renderPiecesList() {
+  const list = document.getElementById('pieces-list');
+  list.innerHTML = '';
+  pieces.forEach((p, i) => {
+    const div = document.createElement('div');
+    div.className = 'piece-item' + (i === selectedIdx ? ' selected' : '');
+    div.innerHTML = `
+      <div class="piece-color" style="background:${p.color}"></div>
+      <span class="piece-name" contenteditable="true"
+        onblur="renamePiece(${i}, this.textContent)">${p.name}</span>
+      <span class="piece-pts">${p.points.length} pts${p.holes.length ? ' +' + p.holes.length + ' aguj.' : ''}${p.closed ? ' ✓' : ''}</span>
+      <span class="piece-del" onclick="event.stopPropagation(); deletePiece(${i})">×</span>
+    `;
+    div.addEventListener('click', () => selectPiece(i));
+    list.appendChild(div);
+  });
+}
+
+window.renamePiece = function(idx, name) {
+  pieces[idx].name = name.trim() || `Pieza ${idx + 1}`;
+};
+
+// ── Drawing ───────────────────────────────────────────────────
+drawCanvas.addEventListener('click', (e) => {
+  if (pieces.length === 0) return;
+  const rect = drawCanvas.getBoundingClientRect();
+  const scaleX = imgW / rect.width;
+  const scaleY = imgH / rect.height;
+  const x = (e.clientX - rect.left) * scaleX;
+  const y = (e.clientY - rect.top) * scaleY;
+
+  const piece = pieces[selectedIdx];
+
+  if (drawingHole) {
+    if (!piece.holes.length || piece._holeFinished) {
+      piece.holes.push([]);
+      piece._holeFinished = false;
+    }
+    piece.holes[piece.holes.length - 1].push([x, y]);
+  } else {
+    if (piece.closed) return;
+    piece.points.push([x, y]);
+  }
+
+  renderPiecesList();
+  redraw();
+});
+
+drawCanvas.addEventListener('mousemove', (e) => {
+  const rect = drawCanvas.getBoundingClientRect();
+  const scaleX = imgW / rect.width;
+  const scaleY = imgH / rect.height;
+  const x = ((e.clientX - rect.left) * scaleX).toFixed(0);
+  const y = ((e.clientY - rect.top) * scaleY).toFixed(0);
+  const photoLabel = activePhotoIdx >= 0 ? `foto ${activePhotoIdx + 1}/${photos.length}` : '';
+  document.getElementById('coords-info').textContent = `${x}, ${y} | ${imgW}×${imgH} | ${photoLabel}`;
+  redraw(e);
+});
+
+// ── Canvas rendering ──────────────────────────────────────────
+function redraw(mouseEvt) {
+  if (!imgW) return;
+  ctx.clearRect(0, 0, imgW, imgH);
+
+  pieces.forEach((piece, pi) => {
+    const isSel = pi === selectedIdx;
+    const alpha = isSel ? 0.6 : 0.3;
+    const pts = piece.points;
+    if (pts.length === 0) return;
+
+    ctx.save();
+
+    // Draw outline
+    if (mode === 'curve' && pts.length >= 3) {
+      drawSmoothPath(ctx, pts, piece.closed);
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) {
+        ctx.lineTo(pts[i][0], pts[i][1]);
+      }
+      if (piece.closed) ctx.closePath();
+    }
+
+    ctx.strokeStyle = piece.color;
+    ctx.lineWidth = isSel ? 3 : 2;
+    ctx.globalAlpha = alpha + 0.2;
+    ctx.stroke();
+
+    if (piece.closed) {
+      ctx.globalAlpha = alpha * 0.3;
+      ctx.fillStyle = piece.color;
+      ctx.fill();
+    }
+
+    // Draw holes
+    piece.holes.forEach(hole => {
+      if (hole.length < 2) return;
+      ctx.beginPath();
+      ctx.moveTo(hole[0][0], hole[0][1]);
+      for (let i = 1; i < hole.length; i++) {
+        ctx.lineTo(hole[i][0], hole[i][1]);
+      }
+      ctx.closePath();
+      ctx.strokeStyle = '#ff6666';
+      ctx.lineWidth = 2;
+      ctx.globalAlpha = 0.7;
+      ctx.stroke();
+      ctx.globalAlpha = 0.15;
+      ctx.fillStyle = '#ff0000';
+      ctx.fill();
+    });
+
+    // Draw points
+    ctx.globalAlpha = 1;
+    pts.forEach((p, j) => {
+      ctx.beginPath();
+      ctx.arc(p[0], p[1], isSel ? 5 : 3, 0, Math.PI * 2);
+      ctx.fillStyle = isSel ? '#fff' : piece.color;
+      ctx.fill();
+      if (isSel && j === 0 && pts.length > 2) {
+        ctx.strokeStyle = '#ffff00';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(p[0], p[1], 10, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    });
+
+    piece.holes.forEach(hole => {
+      hole.forEach(p => {
+        ctx.beginPath();
+        ctx.arc(p[0], p[1], 4, 0, Math.PI * 2);
+        ctx.fillStyle = '#ff8888';
+        ctx.fill();
+      });
+    });
+
+    ctx.restore();
+  });
+
+  // Mouse preview line
+  if (mouseEvt) {
+    const rect = drawCanvas.getBoundingClientRect();
+    const scaleX = imgW / rect.width;
+    const scaleY = imgH / rect.height;
+    const mx = (mouseEvt.clientX - rect.left) * scaleX;
+    const my = (mouseEvt.clientY - rect.top) * scaleY;
+
+    ctx.save();
+    ctx.globalAlpha = 0.4;
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([5, 5]);
+
+    const piece = pieces[selectedIdx];
+    if (piece && !piece.closed) {
+      const pts = drawingHole
+        ? (piece.holes.length ? piece.holes[piece.holes.length - 1] : [])
+        : piece.points;
+      if (pts.length > 0) {
+        const last = pts[pts.length - 1];
+        ctx.beginPath();
+        ctx.moveTo(last[0], last[1]);
+        ctx.lineTo(mx, my);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+}
+
+function drawSmoothPath(ctx, pts, closed) {
+  if (pts.length < 2) return;
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+
+  if (pts.length === 2) {
+    ctx.lineTo(pts[1][0], pts[1][1]);
+  } else {
+    const allPts = closed
+      ? [pts[pts.length - 1], ...pts, pts[0], pts[1]]
+      : [pts[0], ...pts, pts[pts.length - 1]];
+
+    for (let i = 1; i < allPts.length - 2; i++) {
+      const p0 = allPts[i - 1], p1 = allPts[i], p2 = allPts[i + 1], p3 = allPts[i + 2];
+      const tension = 0.3;
+      const cp1x = p1[0] + (p2[0] - p0[0]) * tension;
+      const cp1y = p1[1] + (p2[1] - p0[1]) * tension;
+      const cp2x = p2[0] - (p3[0] - p1[0]) * tension;
+      const cp2y = p2[1] - (p3[1] - p1[1]) * tension;
+      ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2[0], p2[1]);
+    }
+  }
+  if (closed) ctx.closePath();
+}
+
+// ── Toolbar actions ───────────────────────────────────────────
+document.getElementById('mode-line').addEventListener('click', () => {
+  mode = 'line';
+  document.getElementById('mode-line').classList.add('active');
+  document.getElementById('mode-curve').classList.remove('active');
+  redraw();
+});
+document.getElementById('mode-curve').addEventListener('click', () => {
+  mode = 'curve';
+  document.getElementById('mode-curve').classList.add('active');
+  document.getElementById('mode-line').classList.remove('active');
+  redraw();
+});
+
+document.getElementById('btn-undo').addEventListener('click', () => {
+  const piece = pieces[selectedIdx];
+  if (!piece) return;
+  if (drawingHole && piece.holes.length) {
+    const lastHole = piece.holes[piece.holes.length - 1];
+    if (lastHole.length > 0) {
+      lastHole.pop();
+    } else {
+      piece.holes.pop();
+    }
+  } else {
+    piece.points.pop();
+    piece.closed = false;
+  }
+  renderPiecesList();
+  redraw();
+});
+
+document.getElementById('btn-close').addEventListener('click', () => {
+  const piece = pieces[selectedIdx];
+  if (!piece) return;
+  if (drawingHole && piece.holes.length) {
+    piece._holeFinished = true;
+    drawingHole = false;
+    document.getElementById('btn-hole').classList.remove('active');
+    document.getElementById('btn-hole').textContent = '+ Agujero';
+  } else if (piece.points.length >= 3) {
+    piece.closed = true;
+  }
+  renderPiecesList();
+  redraw();
+});
+
+document.getElementById('btn-hole').addEventListener('click', () => {
+  drawingHole = !drawingHole;
+  const btn = document.getElementById('btn-hole');
+  btn.classList.toggle('active', drawingHole);
+  btn.textContent = drawingHole ? 'Trazando agujero...' : '+ Agujero';
+  const piece = pieces[selectedIdx];
+  if (piece && drawingHole) {
+    piece.holes.push([]);
+    piece._holeFinished = false;
+  }
+});
+
+// ── Output generation ─────────────────────────────────────────
+window.generateOutput = function() {
+  if (!imgW) return;
+
+  const scaleW = 5.0;
+  const scaleH = scaleW * (imgH / imgW);
+  const offX = scaleW / 2;
+
+  let code = `// Coordenadas generadas por Trazador\n`;
+  code += `// Imagen: ${imgW}×${imgH}px → ${scaleW.toFixed(1)} × ${scaleH.toFixed(1)} unidades\n`;
+  code += `// Foto de referencia: ${activePhotoIdx >= 0 ? photos[activePhotoIdx].name : 'N/A'}\n\n`;
+
+  pieces.forEach((piece, i) => {
+    if (piece.points.length < 3) return;
+
+    const norm = piece.points.map(([x, y]) => [
+      parseFloat((x / imgW * scaleW - offX).toFixed(3)),
+      parseFloat(((imgH - y) / imgW * scaleW).toFixed(3)),
+    ]);
+
+    const safeName = piece.name.replace(/[^a-zA-Z0-9]/g, '');
+    code += `// ${piece.name} (${piece.points.length} puntos)\n`;
+    code += `function create${safeName}Shape() {\n`;
+    code += `  const shape = new THREE.Shape();\n`;
+    code += `  shape.moveTo(${norm[0][0]}, ${norm[0][1]});\n`;
+
+    if (mode === 'curve' && norm.length >= 3) {
+      const allPts = [norm[norm.length - 1], ...norm, norm[0], norm[1]];
+      for (let j = 1; j < allPts.length - 2; j++) {
+        const p0 = allPts[j-1], p1 = allPts[j], p2 = allPts[j+1], p3 = allPts[j+2];
+        const t = 0.3;
+        const cp1x = (p1[0] + (p2[0] - p0[0]) * t).toFixed(3);
+        const cp1y = (p1[1] + (p2[1] - p0[1]) * t).toFixed(3);
+        const cp2x = (p2[0] - (p3[0] - p1[0]) * t).toFixed(3);
+        const cp2y = (p2[1] - (p3[1] - p1[1]) * t).toFixed(3);
+        code += `  shape.bezierCurveTo(${cp1x}, ${cp1y}, ${cp2x}, ${cp2y}, ${p2[0]}, ${p2[1]});\n`;
+      }
+    } else {
+      for (let j = 1; j < norm.length; j++) {
+        code += `  shape.lineTo(${norm[j][0]}, ${norm[j][1]});\n`;
+      }
+    }
+    code += `  shape.closePath();\n`;
+
+    piece.holes.forEach((hole, hi) => {
+      if (hole.length < 3) return;
+      const hn = hole.map(([x, y]) => [
+        parseFloat((x / imgW * scaleW - offX).toFixed(3)),
+        parseFloat(((imgH - y) / imgW * scaleW).toFixed(3)),
+      ]);
+      code += `  const hole${hi} = new THREE.Path();\n`;
+      code += `  hole${hi}.moveTo(${hn[0][0]}, ${hn[0][1]});\n`;
+      for (let j = 1; j < hn.length; j++) {
+        code += `  hole${hi}.lineTo(${hn[j][0]}, ${hn[j][1]});\n`;
+      }
+      code += `  shape.holes.push(hole${hi});\n`;
+    });
+
+    code += `  return shape;\n`;
+    code += `}\n\n`;
+  });
+
+  document.getElementById('output').value = code;
+};
+
+window.copyOutput = function() {
+  const ta = document.getElementById('output');
+  ta.select();
+  navigator.clipboard.writeText(ta.value);
+};
+
+window.exportJSON = function() {
+  const data = {
+    imgSize: [imgW, imgH],
+    photos: photos.map(p => p.name),
+    pieces: pieces.map(p => ({
+      name: p.name,
+      color: p.color,
+      points: p.points,
+      holes: p.holes,
+      closed: p.closed,
+    })),
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'trazado.json';
+  a.click();
+};
+
+window.importJSON = function() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (data.pieces) {
+          pieces = data.pieces.map((p, i) => ({
+            name: p.name || `Pieza ${i+1}`,
+            color: p.color || PIECE_COLORS[i % PIECE_COLORS.length],
+            points: p.points || [],
+            holes: p.holes || [],
+            closed: p.closed || false,
+          }));
+          selectedIdx = 0;
+          renderPiecesList();
+          redraw();
+        }
+      } catch (err) {
+        alert('Error al importar: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+};
+
+// ── Keyboard shortcuts ────────────────────────────────────────
+document.addEventListener('keydown', (e) => {
+  if (e.target.contentEditable === 'true' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+
+  if (e.key === 'z' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    document.getElementById('btn-undo').click();
+  }
+  if (e.key === 'Enter') {
+    document.getElementById('btn-close').click();
+  }
+  if (e.key === 'n') {
+    addNewPiece();
+  }
+  if (e.key === 'h') {
+    document.getElementById('btn-hole').click();
+  }
+  // Switch photos with arrow keys or 1-9
+  if (e.key === 'ArrowLeft' && photos.length > 1) {
+    selectPhoto((activePhotoIdx - 1 + photos.length) % photos.length);
+  }
+  if (e.key === 'ArrowRight' && photos.length > 1) {
+    selectPhoto((activePhotoIdx + 1) % photos.length);
+  }
+  if (e.key >= '1' && e.key <= '9') {
+    const idx = parseInt(e.key) - 1;
+    if (idx < photos.length) selectPhoto(idx);
+  }
+});
+
+// Init
+renderPhotoStrip();
+renderPiecesList();
+</script>
+</body>
+</html>

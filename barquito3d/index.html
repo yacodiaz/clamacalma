@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Barquito 3D - Clamacalma</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { overflow: hidden; background: #1a1a2e; font-family: 'Segoe UI', sans-serif; }
+  canvas { display: block; }
+  #ui {
+    position: absolute; top: 20px; left: 20px;
+    color: #e0e0e0; pointer-events: none;
+  }
+  #ui h1 {
+    font-size: 28px; font-weight: 300; letter-spacing: 2px;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+  }
+  #ui p { font-size: 13px; opacity: 0.6; margin-top: 6px; }
+  #controls {
+    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 10px;
+  }
+  #controls button {
+    background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+    color: #e0e0e0; padding: 10px 20px; border-radius: 8px; cursor: pointer;
+    font-size: 13px; backdrop-filter: blur(10px); transition: all 0.2s;
+    pointer-events: all;
+  }
+  #controls button:hover {
+    background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.4);
+  }
+  #hint {
+    position: absolute; bottom: 70px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.5); font-size: 12px; pointer-events: none;
+    transition: opacity 0.5s;
+  }
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <h1>BARQUITO</h1>
+  <p>Clamacalma - Test trazado → 3D</p>
+</div>
+
+<div id="hint">Click y arrastra las piezas | Rueda para zoom | Click derecho para rotar</div>
+
+<div id="controls">
+  <button onclick="assembleAll()">Armar todo</button>
+  <button onclick="scatterAll()">Desarmar</button>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// --- Scene setup ---
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a2e);
+
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 3, 8);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.target.set(0, 1.5, 0);
+
+// --- Lights ---
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+dirLight.position.set(5, 8, 5);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(1024, 1024);
+dirLight.shadow.camera.near = 0.1;
+dirLight.shadow.camera.far = 30;
+dirLight.shadow.camera.left = -5;
+dirLight.shadow.camera.right = 5;
+dirLight.shadow.camera.top = 5;
+dirLight.shadow.camera.bottom = -5;
+scene.add(dirLight);
+
+const fillLight = new THREE.DirectionalLight(0x8ecae6, 0.4);
+fillLight.position.set(-3, 4, -3);
+scene.add(fillLight);
+
+// --- Floor ---
+const floorGeo = new THREE.PlaneGeometry(20, 20);
+const floorMat = new THREE.MeshStandardMaterial({ color: 0x16213e, roughness: 0.9 });
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// --- Traced shapes from the tracer tool ---
+// The coordinates come from the tracer with Y pointing up.
+// We center them and scale them for a nice 3D result.
+
+// Center of the traced shape (approximate)
+const cx = 0.05;  // center x
+const cy = 3.6;   // center y (hull top line is ~3.5)
+const scale = 2.0; // scale up for better visibility
+
+function createSail1Shape() {
+  // Pieza 1: left sail (vela izquierda)
+  const shape = new THREE.Shape();
+  const pts = [
+    [-0.825, 3.609],
+    [0.038, 3.523],
+    [0.163, 4.933],
+    [-0.825, 3.59]
+  ];
+  // Normalize: center and scale
+  shape.moveTo((pts[0][0] - cx) * scale, (pts[0][1] - cy) * scale);
+  for (let i = 1; i < pts.length; i++) {
+    shape.lineTo((pts[i][0] - cx) * scale, (pts[i][1] - cy) * scale);
+  }
+  shape.closePath();
+  return shape;
+}
+
+function createSail2Shape() {
+  // Pieza 2: right sail (vela derecha)
+  const shape = new THREE.Shape();
+  const pts = [
+    [0.211, 4.895],
+    [0.077, 3.533],
+    [0.978, 3.398],
+    [0.211, 4.875]
+  ];
+  shape.moveTo((pts[0][0] - cx) * scale, (pts[0][1] - cy) * scale);
+  for (let i = 1; i < pts.length; i++) {
+    shape.lineTo((pts[i][0] - cx) * scale, (pts[i][1] - cy) * scale);
+  }
+  shape.closePath();
+  return shape;
+}
+
+function createHullShape() {
+  // Pieza 3: hull (casco)
+  const shape = new THREE.Shape();
+  const pts = [
+    [-0.873, 3.59],
+    [0.978, 3.389],
+    [0.748, 3.053],
+    [0.269, 2.823],
+    [-0.105, 2.861],
+    [-0.575, 3.034],
+    [-0.748, 3.245],
+    [-0.902, 3.475],
+    [-0.892, 3.581],
+    [0.997, 3.379]
+  ];
+  shape.moveTo((pts[0][0] - cx) * scale, (pts[0][1] - cy) * scale);
+  for (let i = 1; i < pts.length; i++) {
+    shape.lineTo((pts[i][0] - cx) * scale, (pts[i][1] - cy) * scale);
+  }
+  shape.closePath();
+  return shape;
+}
+
+// --- Materials (wood-like) ---
+const sail1Mat = new THREE.MeshStandardMaterial({
+  color: 0xe07b39, // orange-ish wood
+  roughness: 0.7,
+  metalness: 0.0,
+});
+const sail2Mat = new THREE.MeshStandardMaterial({
+  color: 0xd4a574, // lighter wood
+  roughness: 0.7,
+  metalness: 0.0,
+});
+const hullMat = new THREE.MeshStandardMaterial({
+  color: 0x5b9bd5, // blue painted wood
+  roughness: 0.6,
+  metalness: 0.0,
+});
+
+// --- Extrude settings ---
+const extrudeSettings = {
+  depth: 0.5,
+  bevelEnabled: true,
+  bevelThickness: 0.03,
+  bevelSize: 0.03,
+  bevelSegments: 3,
+};
+
+// --- Create meshes ---
+const pieces = [];
+
+function createPiece(shapeFunc, material, name) {
+  const shape = shapeFunc();
+  const geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+  geo.computeBoundingBox();
+  // Center the geometry on its bounding box
+  const bb = geo.boundingBox;
+  const centerX = (bb.max.x + bb.min.x) / 2;
+  const centerY = (bb.max.y + bb.min.y) / 2;
+  geo.translate(-centerX, -centerY, -extrudeSettings.depth / 2);
+
+  const mesh = new THREE.Mesh(geo, material);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  mesh.name = name;
+  scene.add(mesh);
+  pieces.push(mesh);
+  return mesh;
+}
+
+const sail1 = createPiece(createSail1Shape, sail1Mat, 'sail1');
+const sail2 = createPiece(createSail2Shape, sail2Mat, 'sail2');
+const hull = createPiece(createHullShape, hullMat, 'hull');
+
+// --- Assembled positions ---
+// Position pieces relative to each other as they were traced
+// The hull sits at the bottom, sails on top
+
+// Hull center in normalized coords
+const hullCenterY = ((3.59 - cy) + (2.823 - cy)) / 2 * scale;
+const hullCenterX = ((-0.873 - cx) + (0.978 - cx)) / 2 * scale;
+
+// Sail 1 center
+const s1CenterX = ((-0.825 - cx + 0.163 - cx) / 2) * scale;
+const s1CenterY = ((3.609 - cy + 4.933 - cy) / 2) * scale;
+
+// Sail 2 center
+const s2CenterX = ((0.077 - cx + 0.978 - cx) / 2) * scale;
+const s2CenterY = ((3.398 - cy + 4.895 - cy) / 2) * scale;
+
+const assembledPositions = [
+  new THREE.Vector3(s1CenterX, s1CenterY, 0),   // sail1
+  new THREE.Vector3(s2CenterX, s2CenterY, 0),   // sail2
+  new THREE.Vector3(hullCenterX, hullCenterY, 0) // hull
+];
+
+// Scattered positions
+const scatteredPositions = [
+  new THREE.Vector3(-3, 1.5, 0),
+  new THREE.Vector3(3, 1.5, 0),
+  new THREE.Vector3(0, -0.5, 0)
+];
+
+// Start assembled
+pieces.forEach((p, i) => {
+  p.position.copy(assembledPositions[i]);
+});
+
+// --- Animation ---
+let animating = false;
+const animDuration = 800;
+
+function animateTo(targets) {
+  if (animating) return;
+  animating = true;
+  const starts = pieces.map(p => p.position.clone());
+  const t0 = performance.now();
+  function step(now) {
+    const elapsed = now - t0;
+    const t = Math.min(elapsed / animDuration, 1);
+    // Ease in-out cubic
+    const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    pieces.forEach((p, i) => {
+      p.position.lerpVectors(starts[i], targets[i], ease);
+    });
+    if (t < 1) requestAnimationFrame(step);
+    else animating = false;
+  }
+  requestAnimationFrame(step);
+}
+
+window.assembleAll = () => animateTo(assembledPositions);
+window.scatterAll = () => animateTo(scatteredPositions);
+
+// --- Drag interaction ---
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+let dragging = null;
+let dragOffset = new THREE.Vector3();
+
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(pieces);
+  if (hits.length > 0) {
+    dragging = hits[0].object;
+    controls.enabled = false;
+    const intersection = new THREE.Vector3();
+    raycaster.ray.intersectPlane(plane, intersection);
+    dragOffset.subVectors(dragging.position, intersection);
+  }
+});
+
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (!dragging) return;
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const intersection = new THREE.Vector3();
+  raycaster.ray.intersectPlane(plane, intersection);
+  dragging.position.copy(intersection.add(dragOffset));
+});
+
+renderer.domElement.addEventListener('pointerup', () => {
+  if (dragging) {
+    dragging = null;
+    controls.enabled = true;
+  }
+});
+
+// --- Resize ---
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// --- Render loop ---
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+// Hide hint after 5s
+setTimeout(() => {
+  document.getElementById('hint').style.opacity = '0';
+}, 5000);
+</script>
+</body>
+</html>

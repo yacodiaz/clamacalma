@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tangram 3D - Clamacalma</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { overflow: hidden; background: #1a1a2e; font-family: 'Segoe UI', sans-serif; }
+  canvas { display: block; }
+  #ui {
+    position: absolute; top: 20px; left: 20px;
+    color: #e0e0e0; pointer-events: none;
+  }
+  #ui h1 {
+    font-size: 28px; font-weight: 300; letter-spacing: 2px;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+  }
+  #ui p {
+    font-size: 13px; opacity: 0.6; margin-top: 6px;
+  }
+  #controls {
+    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 10px;
+  }
+  #controls button {
+    background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+    color: #e0e0e0; padding: 10px 20px; border-radius: 8px; cursor: pointer;
+    font-size: 13px; backdrop-filter: blur(10px); transition: all 0.2s;
+    pointer-events: all;
+  }
+  #controls button:hover {
+    background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.4);
+  }
+  #hint {
+    position: absolute; bottom: 70px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.5); font-size: 12px; pointer-events: none;
+    transition: opacity 0.5s;
+  }
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <h1>TANGRAM</h1>
+  <p>Clamacalma - Juegos artesanales en madera</p>
+</div>
+
+<div id="hint">Click y arrastra las piezas | Rueda para zoom | Click derecho para rotar camara</div>
+
+<div id="controls">
+  <button onclick="resetPieces()">Armar cuadrado</button>
+  <button onclick="scatterPieces()">Separar piezas</button>
+  <button onclick="toggleAutoRotate()">Auto-rotar</button>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── Scene setup ──────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a2e);
+scene.fog = new THREE.Fog(0x1a1a2e, 15, 30);
+
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 8, 8);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.target.set(0, 0.3, 0);
+controls.maxPolarAngle = Math.PI / 2.1;
+controls.minDistance = 4;
+controls.maxDistance = 20;
+
+// ── Lighting ─────────────────────────────────────────────────
+const ambientLight = new THREE.AmbientLight(0x404060, 0.8);
+scene.add(ambientLight);
+
+const mainLight = new THREE.DirectionalLight(0xfff5e6, 2.5);
+mainLight.position.set(5, 10, 5);
+mainLight.castShadow = true;
+mainLight.shadow.mapSize.set(2048, 2048);
+mainLight.shadow.camera.near = 1;
+mainLight.shadow.camera.far = 25;
+mainLight.shadow.camera.left = -8;
+mainLight.shadow.camera.right = 8;
+mainLight.shadow.camera.top = 8;
+mainLight.shadow.camera.bottom = -8;
+mainLight.shadow.bias = -0.001;
+scene.add(mainLight);
+
+const fillLight = new THREE.DirectionalLight(0x6688cc, 0.6);
+fillLight.position.set(-4, 6, -3);
+scene.add(fillLight);
+
+const rimLight = new THREE.DirectionalLight(0xffc880, 0.4);
+rimLight.position.set(0, 3, -8);
+scene.add(rimLight);
+
+// ── Materials ────────────────────────────────────────────────
+function createWoodMaterial(color) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.0 });
+}
+
+function createPieceMaterial(color) {
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.02 });
+}
+
+// ── Table surface ────────────────────────────────────────────
+const tableGeo = new THREE.CylinderGeometry(7, 7, 0.15, 64);
+const table = new THREE.Mesh(tableGeo, createWoodMaterial(0xd4a056));
+table.position.y = -0.15;
+table.receiveShadow = true;
+scene.add(table);
+
+// ── Wooden frame/tray ────────────────────────────────────────
+const FRAME_SIZE = 3.05;
+const FRAME_WALL = 0.15;
+const FRAME_HEIGHT = 0.45;
+const frameMat = createWoodMaterial(0xe8d5a3);
+
+const baseGeo = new THREE.BoxGeometry(FRAME_SIZE + FRAME_WALL * 2, 0.08, FRAME_SIZE + FRAME_WALL * 2);
+const frameBase = new THREE.Mesh(baseGeo, frameMat);
+frameBase.position.y = 0.04;
+frameBase.receiveShadow = true;
+scene.add(frameBase);
+
+[
+  { x: 0, z: -(FRAME_SIZE / 2 + FRAME_WALL / 2), sx: FRAME_SIZE + FRAME_WALL * 2, sz: FRAME_WALL },
+  { x: 0, z:  (FRAME_SIZE / 2 + FRAME_WALL / 2), sx: FRAME_SIZE + FRAME_WALL * 2, sz: FRAME_WALL },
+  { x: -(FRAME_SIZE / 2 + FRAME_WALL / 2), z: 0, sx: FRAME_WALL, sz: FRAME_SIZE },
+  { x:  (FRAME_SIZE / 2 + FRAME_WALL / 2), z: 0, sx: FRAME_WALL, sz: FRAME_SIZE },
+].forEach(w => {
+  const geo = new THREE.BoxGeometry(w.sx, FRAME_HEIGHT, w.sz);
+  const mesh = new THREE.Mesh(geo, frameMat);
+  mesh.position.set(w.x, FRAME_HEIGHT / 2, w.z);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+});
+
+// ── Tangram pieces ───────────────────────────────────────────
+// Tangram defined on a [0,4]x[0,4] grid, scaled to fit in frame.
+// Grid unit U = S/4. The 7 pieces tile the square exactly.
+//
+// Decomposition (verified: all areas sum to 16, no overlaps):
+//   Large tri 1:    (0,0),(4,0),(2,2)          area=4  — bottom
+//   Large tri 2:    (0,0),(0,4),(2,2)          area=4  — left
+//   Medium tri:     (4,4),(2,4),(4,2)          area=2  — top-right corner
+//   Small tri 1:    (0,4),(1,3),(2,4)          area=1  — top-left
+//   Square:         (2,2),(3,1),(4,2),(3,3)    area=2  — center-right diamond
+//   Small tri 2:    (3,1),(4,0),(4,2)          area=1  — bottom-right
+//   Parallelogram:  (1,3),(2,2),(3,3),(2,4)    area=2  — center diamond
+
+const T = 0.35;       // piece thickness
+const S = 2.9;        // tangram square side (fits in 3.05 frame)
+const U = S / 4;      // grid unit = 0.725
+const H = S / 2;      // half side = 1.45
+
+const COLORS = {
+  red:    0xe02020,
+  green:  0x1aad1a,
+  cyan:   0x30a0e0,
+  yellow: 0xf0c020,
+  orange: 0xe86020,
+  pink:   0xf060c0,
+  lime:   0x90d020,
+};
+
+// Grid (gx,gy) → Three.js Shape coords {x, y}
+// After rotateX(-π/2), shape (x,y) maps to scene (x, -z).
+// Grid x → scene x: gx*U - H
+// Grid y → scene z: H - gy*U (y=0 is top in grid → +z in scene)
+// Shape y = -scene_z = gy*U - H
+function gToShape(gx, gy) {
+  return { x: gx * U - H, y: gy * U - H };
+}
+
+function shapeFromGrid(gridPts) {
+  const s = new THREE.Shape();
+  const p0 = gToShape(gridPts[0][0], gridPts[0][1]);
+  s.moveTo(p0.x, p0.y);
+  for (let i = 1; i < gridPts.length; i++) {
+    const p = gToShape(gridPts[i][0], gridPts[i][1]);
+    s.lineTo(p.x, p.y);
+  }
+  s.closePath();
+  return s;
+}
+
+function extrudePiece(shape) {
+  return new THREE.ExtrudeGeometry(shape, {
+    steps: 1, depth: T,
+    bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.03, bevelSegments: 3,
+  });
+}
+
+const pieces = [];
+const pieceGroup = new THREE.Group();
+scene.add(pieceGroup);
+
+function createPiece(gridPts, color, name) {
+  const shape = shapeFromGrid(gridPts);
+  const geo = extrudePiece(shape);
+  geo.rotateX(-Math.PI / 2);
+  geo.translate(0, T, 0);
+
+  const mesh = new THREE.Mesh(geo, createPieceMaterial(color));
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  mesh.position.set(0, 0.08, 0);
+  mesh.userData = {
+    name,
+    homePos: new THREE.Vector3(0, 0.08, 0),
+    homeRot: 0,
+    isDragging: false,
+  };
+  pieceGroup.add(mesh);
+  pieces.push(mesh);
+  return mesh;
+}
+
+// ── 7 pieces ─────────────────────────────────────────────────
+// Large tri 1 (RED) — bottom, hypotenuse on bottom edge
+createPiece([[0,0],[4,0],[2,2]], COLORS.red, 'Triangulo grande rojo');
+
+// Large tri 2 (GREEN) — left, hypotenuse on left edge
+createPiece([[0,0],[0,4],[2,2]], COLORS.green, 'Triangulo grande verde');
+
+// Medium tri (CYAN) — top-right corner, right angle at (4,4)
+createPiece([[4,4],[2,4],[4,2]], COLORS.cyan, 'Triangulo mediano celeste');
+
+// Small tri 1 (LIME) — top-left, right angle at (1,3)
+createPiece([[0,4],[1,3],[2,4]], COLORS.lime, 'Triangulo chico verde');
+
+// Square (YELLOW) — center-right diamond
+createPiece([[2,2],[3,1],[4,2],[3,3]], COLORS.yellow, 'Cuadrado amarillo');
+
+// Small tri 2 (PINK) — bottom-right, right angle at (3,1)
+createPiece([[3,1],[4,0],[4,2]], COLORS.pink, 'Triangulo chico rosa');
+
+// Parallelogram (ORANGE) — center diamond, opposite sides parallel
+createPiece([[1,3],[2,2],[3,3],[2,4]], COLORS.orange, 'Paralelogramo naranja');
+
+// ── Drag interaction ─────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+let draggedPiece = null;
+let dragOffset = new THREE.Vector3();
+let intersection = new THREE.Vector3();
+
+function getMousePos(e) {
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+}
+
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  getMousePos(e);
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(pieces);
+  if (hits.length > 0) {
+    draggedPiece = hits[0].object;
+    controls.enabled = false;
+    raycaster.ray.intersectPlane(plane, intersection);
+    dragOffset.copy(intersection).sub(draggedPiece.position);
+    draggedPiece.position.y = 0.6;
+    draggedPiece.userData.isDragging = true;
+    document.getElementById('hint').style.opacity = '0';
+  }
+});
+
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (!draggedPiece) return;
+  getMousePos(e);
+  raycaster.setFromCamera(mouse, camera);
+  raycaster.ray.intersectPlane(plane, intersection);
+  draggedPiece.position.x = intersection.x - dragOffset.x;
+  draggedPiece.position.z = intersection.z - dragOffset.z;
+});
+
+renderer.domElement.addEventListener('pointerup', () => {
+  if (draggedPiece) {
+    draggedPiece.position.y = 0.08;
+    draggedPiece.userData.isDragging = false;
+    draggedPiece = null;
+    controls.enabled = true;
+  }
+});
+
+// ── Hover effect ─────────────────────────────────────────────
+let hoveredPiece = null;
+renderer.domElement.addEventListener('mousemove', (e) => {
+  if (draggedPiece) return;
+  getMousePos(e);
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(pieces);
+  if (hoveredPiece && (!hits.length || hits[0].object !== hoveredPiece)) {
+    hoveredPiece.material.emissive.setHex(0x000000);
+    renderer.domElement.style.cursor = 'default';
+    hoveredPiece = null;
+  }
+  if (hits.length > 0 && !draggedPiece) {
+    hoveredPiece = hits[0].object;
+    hoveredPiece.material.emissive.setHex(0x222222);
+    renderer.domElement.style.cursor = 'grab';
+  }
+});
+
+// ── Animations ───────────────────────────────────────────────
+function animatePiece(mesh, targetPos, targetRotY, delay) {
+  const startPos = mesh.position.clone();
+  const startRot = mesh.rotation.y;
+  const startTime = performance.now() + delay;
+  const duration = 800;
+
+  function tick() {
+    const now = performance.now();
+    if (now < startTime) { requestAnimationFrame(tick); return; }
+    let t = Math.min((now - startTime) / duration, 1);
+    t = 1 - Math.pow(1 - t, 3); // ease out cubic
+
+    mesh.position.lerpVectors(startPos, new THREE.Vector3(targetPos.x, 0.08, targetPos.z), t);
+    mesh.position.y = 0.08 + Math.sin(t * Math.PI) * 0.5;
+    mesh.rotation.y = startRot + (targetRotY - startRot) * t;
+
+    if (t < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+const scatterPositions = [
+  { x: -3.5, z: -1.5, r: 0.3 },
+  { x:  3.5, z: -1.0, r: -0.5 },
+  { x: -2.5, z:  2.0, r: 1.2 },
+  { x:  2.8, z:  2.2, r: -0.8 },
+  { x: -0.5, z: -3.0, r: 0.7 },
+  { x:  1.0, z:  3.0, r: -1.1 },
+  { x: -4.0, z:  0.3, r: 2.0 },
+];
+
+window.scatterPieces = function() {
+  pieces.forEach((p, i) => {
+    const sp = scatterPositions[i];
+    animatePiece(p, { x: sp.x, z: sp.z }, sp.r, i * 80);
+  });
+};
+
+window.resetPieces = function() {
+  pieces.forEach((p, i) => {
+    const home = p.userData.homePos;
+    animatePiece(p, { x: home.x, z: home.z }, p.userData.homeRot, i * 80);
+  });
+};
+
+let autoRotating = false;
+window.toggleAutoRotate = function() {
+  autoRotating = !autoRotating;
+  controls.autoRotate = autoRotating;
+  controls.autoRotateSpeed = 2;
+};
+
+// ── Resize ───────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ── Render loop ──────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+// Start scattered, then assemble after 1 second
+pieces.forEach((p, i) => {
+  const sp = scatterPositions[i];
+  p.position.set(sp.x, 0.08, sp.z);
+  p.rotation.y = sp.r;
+});
+setTimeout(() => window.resetPieces(), 1000);
+
+</script>
+</body>
+</html>

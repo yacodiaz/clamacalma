@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ola de Equilibrio 3D - Clamacalma</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { overflow: hidden; background: #1a1a2e; font-family: 'Segoe UI', sans-serif; }
+  canvas { display: block; }
+  #ui {
+    position: absolute; top: 20px; left: 20px;
+    color: #e0e0e0; pointer-events: none;
+  }
+  #ui h1 {
+    font-size: 28px; font-weight: 300; letter-spacing: 2px;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+  }
+  #ui p { font-size: 13px; opacity: 0.6; margin-top: 6px; }
+  #controls {
+    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 10px;
+  }
+  #controls button {
+    background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+    color: #e0e0e0; padding: 10px 20px; border-radius: 8px; cursor: pointer;
+    font-size: 13px; backdrop-filter: blur(10px); transition: all 0.2s;
+    pointer-events: all;
+  }
+  #controls button:hover {
+    background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.4);
+  }
+  #hint {
+    position: absolute; bottom: 70px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.5); font-size: 12px; pointer-events: none;
+    transition: opacity 0.5s;
+  }
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <h1>OLA DE EQUILIBRIO</h1>
+  <p>Clamacalma - Juegos artesanales en madera</p>
+</div>
+
+<div id="hint">Click y arrastra las piezas | Rueda para zoom | Click derecho para rotar</div>
+
+<div id="controls">
+  <button onclick="assembleAll()">Armar todo</button>
+  <button onclick="scatterPieces()">Separar piezas</button>
+  <button onclick="toggleAutoRotate()">Auto-rotar</button>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── Scene ────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a2e);
+scene.fog = new THREE.Fog(0x1a1a2e, 18, 35);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
+camera.position.set(0, 4, 7);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.target.set(0, 1.5, 0);
+controls.maxPolarAngle = Math.PI / 2.1;
+controls.minDistance = 4;
+controls.maxDistance = 20;
+
+// ── Lighting ─────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x404060, 0.8));
+
+const mainLight = new THREE.DirectionalLight(0xfff5e6, 2.5);
+mainLight.position.set(5, 10, 5);
+mainLight.castShadow = true;
+mainLight.shadow.mapSize.set(2048, 2048);
+mainLight.shadow.camera.near = 1;
+mainLight.shadow.camera.far = 25;
+mainLight.shadow.camera.left = -8;
+mainLight.shadow.camera.right = 8;
+mainLight.shadow.camera.top = 8;
+mainLight.shadow.camera.bottom = -8;
+mainLight.shadow.bias = -0.001;
+scene.add(mainLight);
+
+const fillLight = new THREE.DirectionalLight(0x6688cc, 0.6);
+fillLight.position.set(-4, 6, -3);
+scene.add(fillLight);
+
+const rimLight = new THREE.DirectionalLight(0xffc880, 0.4);
+rimLight.position.set(0, 3, -8);
+scene.add(rimLight);
+
+// ── Table surface ────────────────────────────────────────────
+const table = new THREE.Mesh(
+  new THREE.CylinderGeometry(7, 7, 0.15, 64),
+  new THREE.MeshStandardMaterial({ color: 0xd4a056, roughness: 0.55 })
+);
+table.position.y = -0.075;
+table.receiveShadow = true;
+scene.add(table);
+
+// ══════════════════════════════════════════════════════════════
+// OLA DE EQUILIBRIO - 4 wave layers + sailboat (hull + 2 sails)
+//
+// The toy is a stacking wave puzzle:
+// - 4 horizontal wave layers in blue gradient (dark→light)
+//   separated by wavy lines, overall shape rises left to right
+//   with a curl at the upper right containing a hole
+// - A sailboat on top: semicircle hull + 2 triangular sails
+// ══════════════════════════════════════════════════════════════
+
+const DEPTH = 0.75; // extrusion depth along Z
+const S = 40;       // steps for curves
+
+// Coordinate system: x goes left→right, y goes bottom→top
+// Wave spans roughly x: 0..5, y: 0..3.5
+// We'll center in X by offsetting -2.5 after building shapes
+
+const CX = 2.5; // center offset for X
+
+// ── Wavy boundary generator ──────────────────────────────────
+// Generates points for a wavy line from x0 to x1 at base y
+function wavyPts(x0, x1, baseY, amp, numWaves, phase) {
+  const pts = [];
+  for (let i = 0; i <= S; i++) {
+    const t = i / S;
+    const x = x0 + t * (x1 - x0);
+    const y = baseY + Math.sin(t * numWaves * Math.PI * 2 + phase) * amp;
+    pts.push([x, y]);
+  }
+  return pts;
+}
+
+// Shared wavy boundaries between layers (so pieces nest perfectly)
+const w1 = wavyPts(0, 5.0, 0.6, 0.08, 2.5, 0.3);
+const w2 = wavyPts(0.3, 5.0, 1.25, 0.08, 2.2, 1.5);
+const w3 = wavyPts(0.8, 4.75, 2.0, 0.07, 2.0, 0.8);
+
+// ── Shape builder helpers ────────────────────────────────────
+function makeExtrudeGeo(shape) {
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    steps: 1,
+    depth: DEPTH,
+    bevelEnabled: true,
+    bevelThickness: 0.02,
+    bevelSize: 0.02,
+    bevelSegments: 2,
+  });
+  geo.translate(-CX, 0, -DEPTH / 2);
+  return geo;
+}
+
+// ── Piece 1: Base (darkest blue) ─────────────────────────────
+// Flat bottom, wavy top (w1), full width
+function createPiece1Shape() {
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0);
+  shape.lineTo(5, 0);
+  // Right edge up to w1's right end
+  shape.lineTo(w1[w1.length - 1][0], w1[w1.length - 1][1]);
+  // Top: wavy w1 from right to left
+  for (let i = w1.length - 2; i >= 0; i--) {
+    shape.lineTo(w1[i][0], w1[i][1]);
+  }
+  // Left edge down
+  shape.lineTo(0, 0);
+  return shape;
+}
+
+// ── Piece 2: Middle (medium blue) ────────────────────────────
+// Bottom = w1, top = w2
+// Left edge: from w1[0] down-left to w2[0]... actually w2 starts at x=0.3
+// The left edge slopes: from w1's left (0, 0.6) up to w2's left (0.3, 1.25)
+function createPiece2Shape() {
+  const shape = new THREE.Shape();
+  // Start at w1's left end
+  shape.moveTo(w1[0][0], w1[0][1]);
+  // Bottom: wavy w1 from left to right
+  for (let i = 1; i < w1.length; i++) {
+    shape.lineTo(w1[i][0], w1[i][1]);
+  }
+  // Right edge up to w2's right end
+  shape.lineTo(w2[w2.length - 1][0], w2[w2.length - 1][1]);
+  // Top: wavy w2 from right to left
+  for (let i = w2.length - 2; i >= 0; i--) {
+    shape.lineTo(w2[i][0], w2[i][1]);
+  }
+  // Left edge down to w1's left
+  shape.lineTo(w1[0][0], w1[0][1]);
+  return shape;
+}
+
+// ── Piece 3: Curl piece (light blue) with hole ───────────────
+// Bottom = w2, top = wave outline with curl, has circular hole
+// This is the main wave body with the breaking wave curl on the right
+function createPiece3Shape() {
+  const shape = new THREE.Shape();
+  // Start at w2's left end
+  shape.moveTo(w2[0][0], w2[0][1]);
+  // Bottom: wavy w2 from left to right
+  for (let i = 1; i < w2.length; i++) {
+    shape.lineTo(w2[i][0], w2[i][1]);
+  }
+  // Right edge going up into the curl
+  shape.lineTo(5.05, 1.6);
+  // Outer curl: goes up, over the top, creating the wave shape
+  // Right side going up
+  shape.bezierCurveTo(5.15, 2.0, 5.1, 2.5, 4.8, 2.85);
+  // Over the top of the curl
+  shape.bezierCurveTo(4.5, 3.15, 4.0, 3.2, 3.5, 3.05);
+  // Continue left along the wave crest (where piece 4 sits)
+  shape.bezierCurveTo(3.0, 2.9, 2.4, 2.65, 1.8, 2.45);
+  // Left slope down
+  shape.bezierCurveTo(1.3, 2.3, 0.9, 2.0, 0.6, 1.7);
+  shape.lineTo(w2[0][0], w2[0][1]);
+  shape.closePath();
+
+  // Hole inside the curl (the wave eye)
+  const hole = new THREE.Path();
+  const hx = 4.25, hy = 2.35, hr = 0.3;
+  hole.moveTo(hx + hr, hy);
+  for (let i = 1; i <= 24; i++) {
+    const a = (i / 24) * Math.PI * 2;
+    hole.lineTo(hx + Math.cos(a) * hr, hy + Math.sin(a) * hr);
+  }
+  shape.holes.push(hole);
+
+  return shape;
+}
+
+// ── Piece 4: Wave crest (mint green) ─────────────────────────
+// Sits on top of piece 3. A crescent/arch shape.
+function createPiece4Shape() {
+  const shape = new THREE.Shape();
+  // Bottom edge: concave, matches piece 3's top
+  shape.moveTo(1.0, 2.25);
+  shape.bezierCurveTo(1.5, 2.4, 2.2, 2.6, 2.8, 2.75);
+  shape.bezierCurveTo(3.2, 2.85, 3.6, 2.95, 3.8, 2.95);
+  // Right end
+  shape.lineTo(3.9, 3.0);
+  // Top edge: convex arch (the wave crest peak)
+  shape.bezierCurveTo(3.7, 3.35, 3.2, 3.55, 2.5, 3.55);
+  shape.bezierCurveTo(1.8, 3.55, 1.2, 3.2, 0.8, 2.8);
+  // Back to start
+  shape.lineTo(1.0, 2.25);
+  shape.closePath();
+  return shape;
+}
+
+// ── Boat hull: semicircle ────────────────────────────────────
+function createHullShape() {
+  const shape = new THREE.Shape();
+  const hw = 0.7; // half-width
+  const hh = 0.45; // height of the semicircle below the flat top
+  // Flat top
+  shape.moveTo(-hw, 0);
+  shape.lineTo(hw, 0);
+  // Semicircle bottom (right to left via bottom)
+  shape.bezierCurveTo(hw, -hh * 0.5, hw * 0.5, -hh, 0, -hh);
+  shape.bezierCurveTo(-hw * 0.5, -hh, -hw, -hh * 0.5, -hw, 0);
+  shape.closePath();
+  return shape;
+}
+
+// ── Boat sail (triangle) ─────────────────────────────────────
+function createSailShape(w, h) {
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0);
+  shape.lineTo(w, 0);
+  shape.lineTo(0, h);
+  shape.closePath();
+  return shape;
+}
+
+// ── Create all pieces ────────────────────────────────────────
+const COLORS = {
+  wave1: 0x1a3a80, // dark navy
+  wave2: 0x2868b0, // medium blue
+  wave3: 0x50a8d0, // light blue
+  wave4: 0x60c8a0, // mint green
+  hull:  0xc08040, // brown wood
+  sailL: 0x4030a0, // purple
+  sailR: 0x20a0a0, // teal
+};
+
+const pieces = [];
+
+function addPiece(geo, color, name, homePos, homeRotY) {
+  const mat = new THREE.MeshStandardMaterial({
+    color: color,
+    roughness: 0.4,
+    metalness: 0.02,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  mesh.position.set(homePos.x, homePos.y, homePos.z);
+  mesh.rotation.y = homeRotY || 0;
+  mesh.userData = {
+    name,
+    homePos: homePos.clone(),
+    homeRotY: homeRotY || 0,
+  };
+  scene.add(mesh);
+  pieces.push(mesh);
+  return mesh;
+}
+
+// Wave pieces (stacked at y=0 in assembled position)
+const geo1 = makeExtrudeGeo(createPiece1Shape());
+const geo2 = makeExtrudeGeo(createPiece2Shape());
+const geo3 = makeExtrudeGeo(createPiece3Shape());
+const geo4 = makeExtrudeGeo(createPiece4Shape());
+
+addPiece(geo1, COLORS.wave1, 'Ola base',    new THREE.Vector3(0, 0, 0), 0);
+addPiece(geo2, COLORS.wave2, 'Ola media',   new THREE.Vector3(0, 0, 0), 0);
+addPiece(geo3, COLORS.wave3, 'Ola rizo',    new THREE.Vector3(0, 0, 0), 0);
+addPiece(geo4, COLORS.wave4, 'Cresta',      new THREE.Vector3(0, 0, 0), 0);
+
+// Boat hull - sits on top of the wave crest
+// In assembled position: centered on the peak of the wave
+const hullGeo = new THREE.ExtrudeGeometry(createHullShape(), {
+  steps: 1, depth: DEPTH * 0.85,
+  bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: 2,
+});
+hullGeo.translate(0, 0, -DEPTH * 0.85 / 2);
+const hullPos = new THREE.Vector3(0, 3.55, 0);
+addPiece(hullGeo, COLORS.hull, 'Casco', hullPos, 0);
+
+// Sails - sit on the hull
+const sailW = 0.55, sailH = 1.0;
+const sailDepth = DEPTH * 0.7;
+
+const sailLGeo = new THREE.ExtrudeGeometry(createSailShape(-sailW, sailH), {
+  steps: 1, depth: sailDepth,
+  bevelEnabled: true, bevelThickness: 0.015, bevelSize: 0.015, bevelSegments: 1,
+});
+sailLGeo.translate(0, 0, -sailDepth / 2);
+addPiece(sailLGeo, COLORS.sailL, 'Vela izquierda', new THREE.Vector3(0, 3.55, 0), 0);
+
+const sailRGeo = new THREE.ExtrudeGeometry(createSailShape(sailW, sailH), {
+  steps: 1, depth: sailDepth,
+  bevelEnabled: true, bevelThickness: 0.015, bevelSize: 0.015, bevelSegments: 1,
+});
+sailRGeo.translate(0, 0, -sailDepth / 2);
+addPiece(sailRGeo, COLORS.sailR, 'Vela derecha', new THREE.Vector3(0, 3.55, 0), 0);
+
+// ── Drag interaction ─────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+let draggedPiece = null;
+let dragOffset = new THREE.Vector3();
+let intersection = new THREE.Vector3();
+
+function getMousePos(e) {
+  mouse.x = (e.clientX / innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+}
+
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  getMousePos(e);
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(pieces);
+  if (hits.length > 0) {
+    draggedPiece = hits[0].object;
+    controls.enabled = false;
+    dragPlane.constant = -draggedPiece.position.y;
+    raycaster.ray.intersectPlane(dragPlane, intersection);
+    dragOffset.copy(intersection).sub(draggedPiece.position);
+    draggedPiece.position.y += 0.4;
+    document.getElementById('hint').style.opacity = '0';
+  }
+});
+
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (!draggedPiece) return;
+  getMousePos(e);
+  raycaster.setFromCamera(mouse, camera);
+  raycaster.ray.intersectPlane(dragPlane, intersection);
+  draggedPiece.position.x = intersection.x - dragOffset.x;
+  draggedPiece.position.z = intersection.z - dragOffset.z;
+});
+
+renderer.domElement.addEventListener('pointerup', () => {
+  if (draggedPiece) {
+    draggedPiece = null;
+    controls.enabled = true;
+  }
+});
+
+// ── Hover effect ─────────────────────────────────────────────
+let hoveredPiece = null;
+renderer.domElement.addEventListener('mousemove', (e) => {
+  if (draggedPiece) return;
+  getMousePos(e);
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(pieces);
+  if (hoveredPiece && (!hits.length || hits[0].object !== hoveredPiece)) {
+    hoveredPiece.material.emissive.setHex(0x000000);
+    renderer.domElement.style.cursor = 'default';
+    hoveredPiece = null;
+  }
+  if (hits.length > 0 && !draggedPiece) {
+    hoveredPiece = hits[0].object;
+    hoveredPiece.material.emissive.setHex(0x181810);
+    renderer.domElement.style.cursor = 'grab';
+  }
+});
+
+// ── Animations ───────────────────────────────────────────────
+function animatePiece(mesh, targetPos, targetRotY, delay) {
+  const startPos = mesh.position.clone();
+  const startRot = mesh.rotation.y;
+  const startTime = performance.now() + delay;
+  const duration = 800;
+
+  function tick() {
+    const now = performance.now();
+    if (now < startTime) { requestAnimationFrame(tick); return; }
+    let t = Math.min((now - startTime) / duration, 1);
+    t = 1 - Math.pow(1 - t, 3);
+
+    mesh.position.lerpVectors(startPos, targetPos, t);
+    mesh.position.y = targetPos.y + Math.sin(t * Math.PI) * 1.2;
+    mesh.rotation.y = startRot + (targetRotY - startRot) * t;
+
+    if (t < 1) requestAnimationFrame(tick);
+    else {
+      mesh.position.copy(targetPos);
+      mesh.rotation.y = targetRotY;
+    }
+  }
+  requestAnimationFrame(tick);
+}
+
+// Scatter positions for 7 pieces
+const scatterData = [
+  { x: -3.0, z: -1.5, ry:  0.3 },
+  { x:  3.0, z: -1.0, ry: -0.4 },
+  { x: -2.0, z:  2.0, ry:  0.6 },
+  { x:  2.5, z:  2.5, ry: -0.5 },
+  { x: -0.5, z: -2.5, ry:  0.2 },
+  { x: -3.2, z:  0.5, ry:  1.0 },
+  { x:  1.0, z:  3.0, ry: -0.8 },
+];
+
+window.scatterPieces = function() {
+  pieces.forEach((p, i) => {
+    const sd = scatterData[i];
+    const target = new THREE.Vector3(sd.x, 0, sd.z);
+    animatePiece(p, target, sd.ry, i * 80);
+  });
+};
+
+window.assembleAll = function() {
+  pieces.forEach((p, i) => {
+    animatePiece(p, p.userData.homePos, p.userData.homeRotY, i * 100);
+  });
+};
+
+let autoRotating = false;
+window.toggleAutoRotate = function() {
+  autoRotating = !autoRotating;
+  controls.autoRotate = autoRotating;
+  controls.autoRotateSpeed = 2;
+};
+
+// ── Resize ───────────────────────────────────────────────────
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ── Render loop ──────────────────────────────────────────────
+(function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+})();
+
+// Start scattered, then assemble after 1.2s
+pieces.forEach((p, i) => {
+  const sd = scatterData[i];
+  p.position.set(sd.x, 0, sd.z);
+  p.rotation.y = sd.ry;
+});
+setTimeout(() => window.assembleAll(), 1200);
+
+</script>
+</body>
+</html>

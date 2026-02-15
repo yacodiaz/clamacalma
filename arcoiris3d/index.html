@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Arco Iris Waldorf 3D - Clamacalma</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { overflow: hidden; background: #1a1a2e; font-family: 'Segoe UI', sans-serif; }
+  canvas { display: block; }
+  #ui {
+    position: absolute; top: 20px; left: 20px;
+    color: #e0e0e0; pointer-events: none;
+  }
+  #ui h1 {
+    font-size: 28px; font-weight: 300; letter-spacing: 2px;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+  }
+  #ui p { font-size: 13px; opacity: 0.6; margin-top: 6px; }
+  #controls {
+    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 10px;
+  }
+  #controls button {
+    background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+    color: #e0e0e0; padding: 10px 20px; border-radius: 8px; cursor: pointer;
+    font-size: 13px; backdrop-filter: blur(10px); transition: all 0.2s;
+    pointer-events: all;
+  }
+  #controls button:hover {
+    background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.4);
+  }
+  #hint {
+    position: absolute; bottom: 70px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.5); font-size: 12px; pointer-events: none;
+    transition: opacity 0.5s;
+  }
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <h1>ARCO IRIS</h1>
+  <p>Clamacalma - Juegos artesanales en madera</p>
+</div>
+
+<div id="hint">Click y arrastra las piezas | Rueda para zoom | Click derecho para rotar camara</div>
+
+<div id="controls">
+  <button onclick="assembleRainbow()">Armar arco iris</button>
+  <button onclick="scatterPieces()">Separar piezas</button>
+  <button onclick="toggleAutoRotate()">Auto-rotar</button>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── Scene ────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a2e);
+scene.fog = new THREE.Fog(0x1a1a2e, 18, 35);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
+camera.position.set(0, 5, 8);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.target.set(0, 0.8, 0);
+controls.maxPolarAngle = Math.PI / 2.1;
+controls.minDistance = 4;
+controls.maxDistance = 20;
+
+// ── Lighting ─────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x404060, 0.8));
+
+const mainLight = new THREE.DirectionalLight(0xfff5e6, 2.5);
+mainLight.position.set(5, 10, 5);
+mainLight.castShadow = true;
+mainLight.shadow.mapSize.set(2048, 2048);
+mainLight.shadow.camera.near = 1;
+mainLight.shadow.camera.far = 25;
+mainLight.shadow.camera.left = -8;
+mainLight.shadow.camera.right = 8;
+mainLight.shadow.camera.top = 8;
+mainLight.shadow.camera.bottom = -8;
+mainLight.shadow.bias = -0.001;
+scene.add(mainLight);
+
+const fillLight = new THREE.DirectionalLight(0x6688cc, 0.6);
+fillLight.position.set(-4, 6, -3);
+scene.add(fillLight);
+
+const rimLight = new THREE.DirectionalLight(0xffc880, 0.4);
+rimLight.position.set(0, 3, -8);
+scene.add(rimLight);
+
+// ── Table surface ────────────────────────────────────────────
+const tableMat = new THREE.MeshStandardMaterial({ color: 0xd4a056, roughness: 0.55 });
+const table = new THREE.Mesh(new THREE.CylinderGeometry(7, 7, 0.15, 64), tableMat);
+table.position.y = -0.075;
+table.receiveShadow = true;
+scene.add(table);
+
+// ── Rainbow arch pieces ──────────────────────────────────────
+// 7 semicircular arches, nesting concentrically.
+// Each arch is an extruded half-annulus (ring section from 0 to PI).
+
+const NUM_ARCHES = 7;
+const WALL = 0.3;          // radial wall thickness of each arch
+const GAP = 0.025;         // gap between arches
+const DEPTH = 0.75;        // wood depth (extrusion)
+const INNER_MIN = 0.35;    // inner radius of smallest arch
+const ARC_SEGMENTS = 48;   // smoothness of curves
+
+// Colors from photo (outside to inside): Red, Orange, Yellow, Lime, Cyan, Blue, Violet
+const ARCH_COLORS = [
+  0xd42020, // red
+  0xe86820, // orange
+  0xf0c020, // yellow
+  0x80c820, // lime green
+  0x20b8b0, // cyan/turquoise
+  0x3070d0, // blue
+  0x7830a0, // violet
+];
+
+function createArchShape(innerR, outerR) {
+  const shape = new THREE.Shape();
+  const steps = ARC_SEGMENTS;
+
+  // Outer arc (0 to PI, counterclockwise = left to right over the top)
+  for (let i = 0; i <= steps; i++) {
+    const angle = (i / steps) * Math.PI;
+    const x = Math.cos(angle) * outerR;
+    const y = Math.sin(angle) * outerR;
+    if (i === 0) shape.moveTo(x, y);
+    else shape.lineTo(x, y);
+  }
+
+  // Inner arc (PI to 0, clockwise = back from left to right)
+  for (let i = steps; i >= 0; i--) {
+    const angle = (i / steps) * Math.PI;
+    const x = Math.cos(angle) * innerR;
+    const y = Math.sin(angle) * innerR;
+    shape.lineTo(x, y);
+  }
+
+  shape.closePath();
+  return shape;
+}
+
+function extrudeArch(shape) {
+  return new THREE.ExtrudeGeometry(shape, {
+    steps: 1,
+    depth: DEPTH,
+    bevelEnabled: true,
+    bevelThickness: 0.025,
+    bevelSize: 0.025,
+    bevelSegments: 3,
+  });
+}
+
+const pieces = [];
+
+for (let i = 0; i < NUM_ARCHES; i++) {
+  // i=0 is the LARGEST (outermost, red), i=6 is the smallest (violet)
+  const idx = NUM_ARCHES - 1 - i; // build from smallest to largest
+  const innerR = INNER_MIN + idx * (WALL + GAP);
+  const outerR = innerR + WALL;
+
+  const shape = createArchShape(innerR, outerR);
+  const geo = extrudeArch(shape);
+
+  // The shape is in XY plane, extruded along Z.
+  // We want: arches standing upright, flat bottom on the table, depth along Z axis.
+  // Shift so the flat bottom (y=0 of arch) sits on the table.
+  // Center the depth (Z) at origin.
+  geo.translate(0, 0, -DEPTH / 2);
+
+  const mat = new THREE.MeshStandardMaterial({
+    color: ARCH_COLORS[idx],
+    roughness: 0.4,
+    metalness: 0.02,
+  });
+
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  mesh.position.set(0, 0, 0);
+
+  mesh.userData = {
+    name: `Arco ${idx + 1}`,
+    index: idx,
+    homePos: new THREE.Vector3(0, 0, 0),
+    homeRot: 0,
+  };
+
+  scene.add(mesh);
+  pieces.push(mesh);
+}
+
+// ── Drag interaction ─────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+let draggedPiece = null;
+let dragOffset = new THREE.Vector3();
+let intersection = new THREE.Vector3();
+
+function getMousePos(e) {
+  mouse.x = (e.clientX / innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+}
+
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  getMousePos(e);
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(pieces);
+  if (hits.length > 0) {
+    draggedPiece = hits[0].object;
+    controls.enabled = false;
+    raycaster.ray.intersectPlane(dragPlane, intersection);
+    dragOffset.copy(intersection).sub(draggedPiece.position);
+    draggedPiece.position.y += 0.5;
+    document.getElementById('hint').style.opacity = '0';
+  }
+});
+
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (!draggedPiece) return;
+  getMousePos(e);
+  raycaster.setFromCamera(mouse, camera);
+  raycaster.ray.intersectPlane(dragPlane, intersection);
+  draggedPiece.position.x = intersection.x - dragOffset.x;
+  draggedPiece.position.z = intersection.z - dragOffset.z;
+});
+
+renderer.domElement.addEventListener('pointerup', () => {
+  if (draggedPiece) {
+    draggedPiece.position.y = draggedPiece.userData.homePos.y || 0;
+    draggedPiece = null;
+    controls.enabled = true;
+  }
+});
+
+// ── Hover effect ─────────────────────────────────────────────
+let hoveredPiece = null;
+renderer.domElement.addEventListener('mousemove', (e) => {
+  if (draggedPiece) return;
+  getMousePos(e);
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(pieces);
+  if (hoveredPiece && (!hits.length || hits[0].object !== hoveredPiece)) {
+    hoveredPiece.material.emissive.setHex(0x000000);
+    renderer.domElement.style.cursor = 'default';
+    hoveredPiece = null;
+  }
+  if (hits.length > 0 && !draggedPiece) {
+    hoveredPiece = hits[0].object;
+    hoveredPiece.material.emissive.setHex(0x222222);
+    renderer.domElement.style.cursor = 'grab';
+  }
+});
+
+// ── Animations ───────────────────────────────────────────────
+function animatePiece(mesh, targetPos, targetRotY, delay) {
+  const startPos = mesh.position.clone();
+  const startRot = mesh.rotation.y;
+  const startTime = performance.now() + delay;
+  const duration = 900;
+
+  function tick() {
+    const now = performance.now();
+    if (now < startTime) { requestAnimationFrame(tick); return; }
+    let t = Math.min((now - startTime) / duration, 1);
+    t = 1 - Math.pow(1 - t, 3); // ease out cubic
+
+    mesh.position.lerpVectors(startPos, targetPos, t);
+    mesh.position.y = targetPos.y + Math.sin(t * Math.PI) * 0.8;
+    mesh.rotation.y = startRot + (targetRotY - startRot) * t;
+
+    if (t < 1) requestAnimationFrame(tick);
+    else mesh.position.copy(targetPos);
+  }
+  requestAnimationFrame(tick);
+}
+
+// Scatter: spread arches around the table
+const scatterData = [
+  { x: -3.0, z: -1.5, r:  0.4 },
+  { x:  3.2, z: -0.8, r: -0.6 },
+  { x: -2.0, z:  2.5, r:  1.5 },
+  { x:  2.5, z:  2.0, r: -1.0 },
+  { x: -0.5, z: -3.0, r:  0.8 },
+  { x:  0.8, z:  3.2, r: -1.5 },
+  { x: -3.5, z:  0.5, r:  2.2 },
+];
+
+window.scatterPieces = function() {
+  pieces.forEach((p, i) => {
+    const sd = scatterData[i];
+    const target = new THREE.Vector3(sd.x, 0, sd.z);
+    p.userData.homePos.copy(target);
+    p.userData.homeRot = sd.r;
+    animatePiece(p, target, sd.r, i * 100);
+  });
+};
+
+window.assembleRainbow = function() {
+  pieces.forEach((p, i) => {
+    const target = new THREE.Vector3(0, 0, 0);
+    p.userData.homePos.copy(target);
+    p.userData.homeRot = 0;
+    animatePiece(p, target, 0, i * 100);
+  });
+};
+
+let autoRotating = false;
+window.toggleAutoRotate = function() {
+  autoRotating = !autoRotating;
+  controls.autoRotate = autoRotating;
+  controls.autoRotateSpeed = 2;
+};
+
+// ── Resize ───────────────────────────────────────────────────
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ── Render loop ──────────────────────────────────────────────
+(function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+})();
+
+// Start scattered, then assemble
+pieces.forEach((p, i) => {
+  const sd = scatterData[i];
+  p.position.set(sd.x, 0, sd.z);
+  p.rotation.y = sd.r;
+  p.userData.homePos.set(sd.x, 0, sd.z);
+  p.userData.homeRot = sd.r;
+});
+setTimeout(() => window.assembleRainbow(), 1200);
+
+</script>
+</body>
+</html>
