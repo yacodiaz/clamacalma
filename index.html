@@ -708,7 +708,7 @@
 <footer class="footer" id="contacto">
   <div class="container">
     <div class="footer-brand">Clamacalma</div>
-    <a class="footer-wa" href="https://wa.me/PLACEHOLDER?text=Hola!%20Me%20interesan%20los%20juguetes%20de%20Clamacalma" target="_blank" rel="noopener">
+    <a class="footer-wa" href="https://wa.me/541158074483?text=Hola!%20Me%20interesan%20los%20juguetes%20de%20Clamacalma" target="_blank" rel="noopener">
       <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
       Escribinos por WhatsApp
     </a>
@@ -723,7 +723,7 @@
 </footer>
 
 <!-- ═══ WHATSAPP FLOAT ═══ -->
-<a class="wa-float" href="https://wa.me/PLACEHOLDER?text=Hola!%20Me%20interesan%20los%20juguetes%20de%20Clamacalma" target="_blank" rel="noopener">
+<a class="wa-float" href="https://wa.me/541158074483?text=Hola!%20Me%20interesan%20los%20juguetes%20de%20Clamacalma" target="_blank" rel="noopener">
   <span class="wa-float-icon">
     <svg viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
   </span>
@@ -745,7 +745,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.m
   const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
   camera.position.set(0, 0, 22);
 
-  // Neutral white lighting — no color tint
+  // Neutral white lighting
   scene.add(new THREE.AmbientLight(0xffffff, 0.85));
   const dir = new THREE.DirectionalLight(0xffffff, 0.7);
   dir.position.set(4, 8, 10);
@@ -754,21 +754,27 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.m
   fill.position.set(-6, -2, 6);
   scene.add(fill);
 
-  // Materials — vivid real toy colors
+  // Materials
   function mat(c) { return new THREE.MeshStandardMaterial({ color: c, roughness: 0.55, metalness: 0 }); }
   const M = {
     red: mat(0xE03C3C), orange: mat(0xEF8533), yellow: mat(0xF2C73D),
     green: mat(0x5DAA68), blue: mat(0x4A90C4), purple: mat(0x9B6BB8),
     wood: mat(0xD4A66A), dark: mat(0xA07550), pale: mat(0xEDD5A8), natural: mat(0xE5C78E),
+    pink: mat(0xE88BA8), teal: mat(0x5BB5A2),
   };
 
   function easeInOut(t) { return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2; }
 
-  const CYCLE = 10, HOLD = 0.3, TRANS = 0.25;
+  const CYCLE = 12, HOLD = 0.25, TRANS = 0.2;
   const groups = [];
 
-  // Geometry helpers
-  const D = 0.22; // tangram depth
+  const D = 0.22;
+
+  // Responsive: detect portrait vs landscape
+  const isMobile = window.innerWidth < 768;
+  const isPortrait = window.innerHeight > window.innerWidth;
+  // Scale factor for mobile — bring things closer together
+  const S = isMobile ? 0.7 : 1;
 
   function scatter(cx, cy, r) {
     return {
@@ -782,7 +788,6 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.m
     defs.forEach((d, i) => {
       const mesh = new THREE.Mesh(d.geo, d.mat);
       scene.add(mesh);
-      // Small Z offset per piece to prevent Z-fighting
       const zOff = (d.z || 0) + i * 0.03;
       pieces.push({
         mesh,
@@ -790,30 +795,12 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.m
           pos: new THREE.Vector3(cx + d.x, cy + d.y, zOff),
           rot: new THREE.Euler(d.rx || 0, d.ry || 0, d.rz || 0),
         },
-        scattered: scatter(cx, cy, scatterR || 10),
+        scattered: scatter(cx, cy, scatterR || 8),
       });
     });
     groups.push({ pieces, offset });
   }
 
-  // ──── GROUP 1: RAINBOW (left) ────
-  // Arches sitting on a base line, nested properly
-  (function() {
-    const cx = -5.5, cy = -0.5;
-    const colors = [M.red, M.orange, M.yellow, M.green, M.blue, M.purple];
-    const radii =  [1.5,  1.22,     0.95,     0.7,     0.47,   0.26];
-    const thick =  [0.13, 0.12,     0.12,     0.11,    0.10,   0.09];
-    const defs = colors.map((m, i) => ({
-      geo: new THREE.TorusGeometry(radii[i], thick[i], 14, 32, Math.PI),
-      mat: m,
-      x: 0,
-      y: radii[i] - radii[0], // base-align all arches
-      z: 0, rx: 0, ry: 0, rz: 0,
-    }));
-    addGroup(cx, cy, defs, 0, 10);
-  })();
-
-  // ──── Helper: polygon shape from vertex array ────
   function polyGeo(verts) {
     const s = new THREE.Shape();
     s.moveTo(verts[0][0], verts[0][1]);
@@ -824,67 +811,116 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.m
     return geo;
   }
 
-  // ──── GROUP 2: HOUSE (top-right) ────
-  // Recognizable house shape from wooden blocks
+  // ──── GROUP 1: RAINBOW ────
   (function() {
-    const cx = 4.5, cy = 2.8;
-    const defs = [
-      // Main wall — wide rectangle
-      { geo: new THREE.BoxGeometry(2.4, 1.6, D), mat: M.pale, x: 0, y: 0 },
-      // Roof left slope
-      { geo: polyGeo([[-1.4, 0], [0, 1.2], [0, 0]]), mat: M.red, x: -0.7, y: 0.95 },
-      // Roof right slope
-      { geo: polyGeo([[0, 0], [0, 1.2], [1.4, 0]]), mat: M.orange, x: 0.7, y: 0.95 },
-      // Door
-      { geo: new THREE.BoxGeometry(0.45, 0.7, D), mat: M.wood, x: 0, y: -0.45 },
-      // Window left
-      { geo: new THREE.BoxGeometry(0.38, 0.38, D), mat: M.blue, x: -0.65, y: 0.18 },
-      // Window right
-      { geo: new THREE.BoxGeometry(0.38, 0.38, D), mat: M.blue, x: 0.65, y: 0.18 },
-      // Chimney
-      { geo: new THREE.BoxGeometry(0.22, 0.55, D), mat: M.dark, x: 0.75, y: 1.45 },
-    ];
-
-    addGroup(cx, cy, defs, CYCLE * 0.66, 10);
+    const cx = -5 * S, cy = isPortrait ? -3 * S : -0.5 * S;
+    const colors = [M.red, M.orange, M.yellow, M.green, M.blue, M.purple];
+    const radii =  [1.5,  1.22,     0.95,     0.7,     0.47,   0.26];
+    const thick =  [0.13, 0.12,     0.12,     0.11,    0.10,   0.09];
+    const sc = isMobile ? 0.8 : 1;
+    const defs = colors.map((m, i) => ({
+      geo: new THREE.TorusGeometry(radii[i] * sc, thick[i] * sc, 14, 32, Math.PI),
+      mat: m,
+      x: 0, y: (radii[i] - radii[0]) * sc,
+      z: 0, rx: 0, ry: 0, rz: 0,
+    }));
+    addGroup(cx, cy, defs, 0, 8);
   })();
 
-  // ──── GROUP 3: SAILBOAT (center-right, lower) ────
+  // ──── GROUP 2: HOUSE ────
   (function() {
-    const cx = 5, cy = -2.5;
+    const cx = 4 * S, cy = isPortrait ? 4.5 * S : 2.8 * S;
+    const sc = isMobile ? 0.75 : 1;
     const defs = [
-      // Hull — wide trapezoid
-      { geo: polyGeo([[-1.3, 0], [1.3, 0], [1.0, -0.5], [-1.0, -0.5]]), mat: M.wood, x: 0, y: 0 },
-      // Mast
-      { geo: new THREE.BoxGeometry(0.1, 2.2, D), mat: M.dark, x: 0, y: 1.1 },
-      // Main sail — large triangle
-      { geo: polyGeo([[0, 0], [0, 1.8], [1.2, 0]]), mat: M.red, x: 0.6, y: 0.35 },
-      // Jib sail — smaller triangle
-      { geo: polyGeo([[0, 0], [0, 1.3], [-0.7, 0]]), mat: M.yellow, x: -0.35, y: 0.55 },
-      // Flag
-      { geo: polyGeo([[0, 0], [0.4, 0.12], [0, 0.25]]), mat: M.green, x: 0.2, y: 2.25 },
-      // Water line
-      { geo: new THREE.BoxGeometry(2.8, 0.08, D), mat: M.blue, x: 0, y: -0.55 },
+      { geo: new THREE.BoxGeometry(2.4*sc, 1.6*sc, D), mat: M.pale, x: 0, y: 0 },
+      { geo: polyGeo([[-1.4*sc, 0], [0, 1.2*sc], [0, 0]]), mat: M.red, x: -0.7*sc, y: 0.95*sc },
+      { geo: polyGeo([[0, 0], [0, 1.2*sc], [1.4*sc, 0]]), mat: M.orange, x: 0.7*sc, y: 0.95*sc },
+      { geo: new THREE.BoxGeometry(0.45*sc, 0.7*sc, D), mat: M.wood, x: 0, y: -0.45*sc },
+      { geo: new THREE.BoxGeometry(0.38*sc, 0.38*sc, D), mat: M.blue, x: -0.65*sc, y: 0.18*sc },
+      { geo: new THREE.BoxGeometry(0.38*sc, 0.38*sc, D), mat: M.blue, x: 0.65*sc, y: 0.18*sc },
+      { geo: new THREE.BoxGeometry(0.22*sc, 0.55*sc, D), mat: M.dark, x: 0.75*sc, y: 1.45*sc },
     ];
-
-    addGroup(cx, cy, defs, CYCLE * 0.33, 10);
+    addGroup(cx, cy, defs, CYCLE * 0.5, 8);
   })();
 
-  // ──── GROUP 4: STACKING CUBES (bottom-left) ────
+  // ──── GROUP 3: SAILBOAT ────
   (function() {
-    const cx = -4, cy = -3.5;
-    const sizes =  [1.05, 0.82, 0.62, 0.45];
+    const cx = isPortrait ? 3.5 * S : 5 * S;
+    const cy = isPortrait ? -5 * S : -2.5 * S;
+    const sc = isMobile ? 0.75 : 1;
+    const defs = [
+      { geo: polyGeo([[-1.3*sc, 0], [1.3*sc, 0], [1.0*sc, -0.5*sc], [-1.0*sc, -0.5*sc]]), mat: M.wood, x: 0, y: 0 },
+      { geo: new THREE.BoxGeometry(0.1*sc, 2.2*sc, D), mat: M.dark, x: 0, y: 1.1*sc },
+      { geo: polyGeo([[0, 0], [0, 1.8*sc], [1.2*sc, 0]]), mat: M.red, x: 0.6*sc, y: 0.35*sc },
+      { geo: polyGeo([[0, 0], [0, 1.3*sc], [-0.7*sc, 0]]), mat: M.yellow, x: -0.35*sc, y: 0.55*sc },
+      { geo: polyGeo([[0, 0], [0.4*sc, 0.12*sc], [0, 0.25*sc]]), mat: M.green, x: 0.2*sc, y: 2.25*sc },
+      { geo: new THREE.BoxGeometry(2.8*sc, 0.08*sc, D), mat: M.blue, x: 0, y: -0.55*sc },
+    ];
+    addGroup(cx, cy, defs, CYCLE * 0.25, 8);
+  })();
+
+  // ──── GROUP 4: STACKING CUBES ────
+  (function() {
+    const cx = isPortrait ? -3.5 * S : -4 * S;
+    const cy = isPortrait ? 3.5 * S : -3.5 * S;
+    const sc = isMobile ? 0.75 : 1;
+    const sizes =  [1.05, 0.82, 0.62, 0.45].map(v => v * sc);
     const colors = [M.red, M.yellow, M.green, M.blue];
     const defs = [];
     let stackY = 0;
     sizes.forEach((s, i) => {
-      defs.push({
-        geo: new THREE.BoxGeometry(s, s, s),
-        mat: colors[i],
-        x: 0, y: stackY + s/2, z: 0, rx: 0, ry: 0, rz: 0,
-      });
+      defs.push({ geo: new THREE.BoxGeometry(s, s, s), mat: colors[i], x: 0, y: stackY + s/2, z: 0 });
       stackY += s;
     });
-    addGroup(cx, cy, defs, CYCLE * 0.5, 9);
+    addGroup(cx, cy, defs, CYCLE * 0.75, 7);
+  })();
+
+  // ──── GROUP 5: TREE ────
+  (function() {
+    const cx = isPortrait ? -2 * S : -2 * S;
+    const cy = isPortrait ? -6.5 * S : 3.5 * S;
+    const sc = isMobile ? 0.7 : 0.9;
+    const defs = [
+      // Trunk
+      { geo: new THREE.BoxGeometry(0.4*sc, 1.2*sc, D), mat: M.dark, x: 0, y: 0 },
+      // Foliage bottom — wide triangle
+      { geo: polyGeo([[-1.1*sc, 0], [1.1*sc, 0], [0, 1.0*sc]]), mat: M.green, x: 0, y: 0.75*sc },
+      // Foliage mid
+      { geo: polyGeo([[-0.85*sc, 0], [0.85*sc, 0], [0, 0.9*sc]]), mat: M.teal, x: 0, y: 1.35*sc },
+      // Foliage top
+      { geo: polyGeo([[-0.6*sc, 0], [0.6*sc, 0], [0, 0.75*sc]]), mat: M.green, x: 0, y: 1.9*sc },
+      // Apple
+      { geo: new THREE.SphereGeometry(0.14*sc, 12, 12), mat: M.red, x: 0.35*sc, y: 1.1*sc, z: 0.12 },
+      // Apple 2
+      { geo: new THREE.SphereGeometry(0.12*sc, 12, 12), mat: M.yellow, x: -0.25*sc, y: 1.65*sc, z: 0.12 },
+    ];
+    addGroup(cx, cy, defs, CYCLE * 0.37, 8);
+  })();
+
+  // ──── GROUP 6: CAT (sitting) ────
+  (function() {
+    const cx = isPortrait ? 2 * S : 1.5 * S;
+    const cy = isPortrait ? 6 * S : 4.5 * S;
+    const sc = isMobile ? 0.65 : 0.85;
+    const defs = [
+      // Body — rounded rectangle
+      { geo: new THREE.BoxGeometry(1.4*sc, 1.0*sc, D), mat: M.orange, x: 0, y: 0 },
+      // Head — circle
+      { geo: new THREE.CylinderGeometry(0.5*sc, 0.5*sc, D, 20), mat: M.orange, x: 0, y: 0.9*sc, rz: Math.PI/2, rx: Math.PI/2 },
+      // Ear left
+      { geo: polyGeo([[-0.18*sc, 0], [0.18*sc, 0], [0, 0.3*sc]]), mat: M.pink, x: -0.3*sc, y: 1.55*sc },
+      // Ear right
+      { geo: polyGeo([[-0.18*sc, 0], [0.18*sc, 0], [0, 0.3*sc]]), mat: M.pink, x: 0.3*sc, y: 1.55*sc },
+      // Tail — curved block
+      { geo: new THREE.BoxGeometry(0.14*sc, 0.9*sc, D), mat: M.dark, x: 0.85*sc, y: 0.3*sc, rz: -0.4 },
+      // Eye left
+      { geo: new THREE.SphereGeometry(0.07*sc, 8, 8), mat: M.green, x: -0.18*sc, y: 1.0*sc, z: 0.15 },
+      // Eye right
+      { geo: new THREE.SphereGeometry(0.07*sc, 8, 8), mat: M.green, x: 0.18*sc, y: 1.0*sc, z: 0.15 },
+      // Nose
+      { geo: polyGeo([[-0.06*sc, 0], [0.06*sc, 0], [0, -0.06*sc]]), mat: M.pink, x: 0, y: 0.78*sc, z: 0.12 },
+    ];
+    addGroup(cx, cy, defs, CYCLE * 0.62, 8);
   })();
 
   // ──── ANIMATION ────
@@ -898,6 +934,8 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.m
     const w = canvas.clientWidth, h = canvas.clientHeight;
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
+    // Wider FOV on portrait/mobile so objects fit
+    camera.fov = (h > w) ? 55 : 40;
     camera.updateProjectionMatrix();
   }
   resize();
@@ -926,14 +964,14 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.m
         lerp3(p.scattered.pos, p.assembled.pos, t, p.mesh.position);
         lerp3(p.scattered.rot, p.assembled.rot, t, p.mesh.rotation);
         if (t < 1) {
-          p.mesh.position.y += Math.sin(clock * 0.4 + p.scattered.pos.x * 2) * 0.18 * (1 - t);
-          p.mesh.position.x += Math.cos(clock * 0.3 + p.scattered.pos.y) * 0.08 * (1 - t);
+          p.mesh.position.y += Math.sin(clock * 0.4 + p.scattered.pos.x * 2) * 0.15 * (1 - t);
+          p.mesh.position.x += Math.cos(clock * 0.3 + p.scattered.pos.y) * 0.06 * (1 - t);
         }
       });
     });
 
-    camera.position.x += (mouseX * 1.8 - camera.position.x) * 0.02;
-    camera.position.y += (-mouseY * 1.2 - camera.position.y) * 0.02;
+    camera.position.x += (mouseX * 1.5 - camera.position.x) * 0.02;
+    camera.position.y += (-mouseY * 1.0 - camera.position.y) * 0.02;
     camera.lookAt(0, 0.5, 0);
     renderer.render(scene, camera);
   }
@@ -946,7 +984,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.m
 (function() {
   'use strict';
 
-  const WA_NUMBER = 'PLACEHOLDER';
+  const WA_NUMBER = '541158074483';
   const WA_BASE = `https://wa.me/${WA_NUMBER}`;
 
   function waLink(product) {
